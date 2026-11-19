@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Workbook</title>
+  <link rel="stylesheet" href="../grid/grid.css">
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; }
+    .bar { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+    #message { min-height: 1.2em; margin: .25rem 0 .5rem; color: #444; }
+    #message.error { color: #b00020; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <label>Open <input type="file" id="open" accept=".json,.csv"></label>
+    <button id="save-json">Save JSON</button>
+    <button id="save-csv">Save CSV</button>
+  </div>
+  <p id="message"></p>
+  <div id="grid" tabindex="0"></div>
+  <script type="module">
+    import { createController, download } from "./io.js";
+    import { createState, mount, select, inputText } from "../grid/grid.js";
+
+    // The one engine: serve.py answers POST /compute with ./engine's computed workbook.
+    const compute = async (book) => {
+      const res = await fetch("/compute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(book) });
+      if (!res.ok) throw new Error(`the server answered ${res.status}`);
+      return res.json();
+    };
+    const controller = createController({ compute });
+    const gridEl = document.getElementById("grid");
+    const messageEl = document.getElementById("message");
+
+    const showMessage = () => {
+      messageEl.textContent = controller.state.message;
+      messageEl.className = /^Could not/.test(controller.state.message) ? "error" : "";
+    };
+
+    // The grid edits a copy of the computed sheet. Each change, find the cells the user typed into
+    // and hand the controller only those, as typed; the grid's book never goes back to the controller.
+    const changedRefs = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
+    // One grid for the page's lifetime: redraws go through its setState, so its listeners are added
+    // once and one keypress is one edit (mounting again on every redraw stacked listeners).
+    let busy = Promise.resolve();
+    let shown = {};
+    let grid = null;
+    const onChange = (s) => {
+      const typed = s.book.sheets[s.sheet] || {};
+      const refs = changedRefs(shown, typed);
+      if (!refs.length) return;
+      busy = busy.then(async () => {
+        for (const ref of refs) await controller.edit(ref, inputText(typed[ref]));
+        showMessage();
+        show(s.selected);
+      });
+    };
+    const show = (selected) => {
+      const { computed, sheet } = controller.state;
+      shown = computed.sheets[sheet] || {};
+      let state = createState(computed, sheet);
+      if (selected) state = select(state, selected);
+      if (grid) grid.setState(state);
+      else grid = mount(gridEl, state, { onChange });
+    };
+
+    document.getElementById("open").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      await controller.openFile(file);
+      e.target.value = "";
+      showMessage();
+      show();
+    });
+    for (const [id, save] of [["save-json", () => controller.saveJSON()], ["save-csv", () => controller.saveCSV()]]) {
+      document.getElementById(id).addEventListener("click", () => {
+        const s = save();
+        download(s.name, s.text, s.type);
+      });
+    }
+    show();
+  </script>
+</body>
+</html>
