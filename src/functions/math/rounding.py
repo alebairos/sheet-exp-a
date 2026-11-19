@@ -50,7 +50,11 @@ def _shown(x):
 
 
 def _approx_floor(x):
-    """Floor of the value Calc shows, so 2.9999999999999996 floors to 3 as in Calc."""
+    """Floor of the value Calc shows, so 2.9999999999999996 floors to 3 as in Calc.
+
+    A non-finite ``x`` is returned as it is (math.floor would raise on it)."""
+    if not math.isfinite(x):
+        return x
     return math.floor(float(_shown(x)))
 
 
@@ -73,7 +77,12 @@ def _round(x, digits, mode):
     except InvalidOperation:
         # More digits than the decimal context holds: the shown value is already exact.
         return _result(float(d))
-    return _result(float(r))
+    rounded = float(r)
+    if not math.isfinite(rounded):
+        # Rounding up past the largest double: Calc keeps the number as it is
+        # (ROUNDUP(1.7E308,-308) is 1.7E308 in LibreOffice).
+        return _result(x)
+    return _result(rounded)
 
 
 def _rounding(mode):
@@ -106,7 +115,14 @@ def mod(dividend, divisor):
     if b == 0:
         return DIV0
     # As Calc: approxSub(a, approxFloor(a / b) * b), which must lie between 0 and the divisor.
-    whole = _approx_floor(a / b) * b
+    # When a / b overflows, Calc's remainder is not finite and fails that test: #VALUE!
+    # (LibreOffice gives #VALUE! for MOD(1E308,1E-10) and MOD(5,1E-320)).
+    quotient = a / b
+    if not math.isfinite(quotient):
+        return VALUE
+    whole = _approx_floor(quotient) * b
+    if not math.isfinite(whole):
+        return VALUE
     r = 0.0 if _approx_equal(a, whole) else a - whole
     if (b > 0 and 0 <= r < b) or (b < 0 and b < r <= 0):
         return _result(r)
