@@ -44,11 +44,61 @@ CALC = [
 ]
 
 
+# MATCH type -1 on descending data (B: 5..1, D: "e".."a", F: 5,5,3,3,1 with ties), as
+# LibreOffice headless computes it.  On data that is not descending Calc's answers come
+# from its internal search and are not pinned here (e.g. MATCH(2,{1;2;3},-1) is #N/A in
+# Calc, 2 here): the plan's checks cover types 0 and 1 only.
+DESC = {"sheets": {"S": {
+    "B1": 5, "B2": 4, "B3": 3, "B4": 2, "B5": 1,
+    "D1": "e", "D2": "d", "D3": "c", "D4": "b", "D5": "a",
+    "F1": 5, "F2": 5, "F3": 3, "F4": 3, "F5": 1,
+}}}
+
+CALC_DESC = [
+    ('=MATCH(0,B1:B5,-1)', 5),
+    ('=MATCH(0.5,B1:B5,-1)', 5),
+    ('=MATCH(1,B1:B5,-1)', 5),
+    ('=MATCH(1.5,B1:B5,-1)', 4),
+    ('=MATCH(2,B1:B5,-1)', 4),
+    ('=MATCH(2.5,B1:B5,-1)', 3),
+    ('=MATCH(3,B1:B5,-1)', 3),
+    ('=MATCH(3.5,B1:B5,-1)', 2),
+    ('=MATCH(4,B1:B5,-1)', 2),
+    ('=MATCH(5,B1:B5,-1)', 1),
+    ('=MATCH(6,B1:B5,-1)', E("#N/A")),
+    ('=MATCH("x",B1:B5,-1)', E("#N/A")),
+    ('=MATCH(0,F1:F5,-1)', 5),
+    ('=MATCH(0.5,F1:F5,-1)', 5),
+    ('=MATCH(1,F1:F5,-1)', 5),
+    ('=MATCH(1.5,F1:F5,-1)', 4),
+    ('=MATCH(2,F1:F5,-1)', 4),
+    ('=MATCH(2.5,F1:F5,-1)', 4),
+    ('=MATCH(3,F1:F5,-1)', 4),
+    ('=MATCH(3.5,F1:F5,-1)', 2),
+    ('=MATCH(4,F1:F5,-1)', 2),
+    ('=MATCH(5,F1:F5,-1)', 2),
+    ('=MATCH(6,F1:F5,-1)', E("#N/A")),
+    ('=MATCH("x",F1:F5,-1)', E("#N/A")),
+    ('=MATCH("a",D1:D5,-1)', 5),
+    ('=MATCH("b",D1:D5,-1)', 4),
+    ('=MATCH("bb",D1:D5,-1)', 3),
+    ('=MATCH("c",D1:D5,-1)', 3),
+    ('=MATCH("f",D1:D5,-1)', E("#N/A")),
+    ('=MATCH("0",D1:D5,-1)', 5),
+    ('=MATCH(3,D1:D5,-1)', E("#N/A")),
+]
+
+
 class LookupLikeCalcTest(unittest.TestCase):
     def test_calc_answers(self):
         for formula, want in CALC:
             with self.subTest(formula=formula):
                 self.assertEqual(to_json(evaluate(formula, BOOK, "Sheet1")), want)
+
+    def test_match_descending(self):
+        for formula, want in CALC_DESC:
+            with self.subTest(formula=formula):
+                self.assertEqual(to_json(evaluate(formula, DESC, "S")), want)
 
     def test_index_returns_a_reference(self):
         from src.eval import Range
