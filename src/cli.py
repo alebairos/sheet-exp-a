@@ -3,6 +3,8 @@
 import json
 import sys
 
+from src.recalc import compute as recalc
+
 
 def load(path):
     if path == "-":
@@ -12,9 +14,8 @@ def load(path):
 
 
 def compute(book):
-    """Return the computed workbook. Constants pass through unchanged."""
-    sheets = book.get("sheets", {}) if isinstance(book, dict) else {}
-    return {"sheets": {name: dict(cells or {}) for name, cells in sheets.items()}}
+    """Return the computed workbook: formulas in dependency order, constants unchanged."""
+    return recalc(book)
 
 
 def cell_value(book, ref):
