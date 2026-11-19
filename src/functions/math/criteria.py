@@ -198,6 +198,47 @@ def _num(x):
     return Number(x) if math.isfinite(x) else NUM
 
 
+def _approx_equal(a, b):
+    """rtl::math::approxEqual: equal to within 2^-48 of both."""
+    if a == b:
+        return True
+    if a == 0.0 or b == 0.0:
+        return False
+    d = abs(a - b)
+    return d < abs(a) * 2.0 ** -48 and d < abs(b) * 2.0 ** -48
+
+
+def _neumaier(total, err, x):
+    t = total + x
+    if abs(total) >= abs(x):
+        err += (total - t) + x
+    else:
+        err += (x - t) + total
+    return t, err
+
+
+def _calc_sum(xs):
+    """Calc's KahanSum (sc/inc/kahan.hxx), which SUMIF and AVERAGEIF add with, in the
+    order the cells are walked.  Each term is held back one step; at the end the held
+    term cancels the rest to 0 when it is approximately its negative, and is otherwise
+    added with one more Neumaier step.  So 0.1, 0.2, -0.3 sum to 0 and 0.1, 0.2, -0.3,
+    1E-17, 0.7, 0.1 to 0.8, as in LibreOffice."""
+    total = err = mem = 0.0
+    for x in xs:
+        if x == 0.0:
+            continue
+        if mem != 0.0:
+            total, err = _neumaier(total, err, mem)
+        mem = x
+    whole = total + err
+    if mem == 0.0:
+        return whole
+    if ((mem < 0.0 < whole) or (whole < 0.0 < mem)) and _approx_equal(mem, -whole):
+        return 0.0
+    total, err = _neumaier(total, err, mem)
+    return total + err
+
+
 @register("COUNTIF")
 def countif(*args):
     if len(args) != 2 or not isinstance(args[0], Range):
@@ -217,7 +258,7 @@ def sumif(*args):
     if isinstance(xs, Error):
         return xs
     try:
-        return _num(math.fsum(xs))
+        return _num(_calc_sum(xs))
     except OverflowError:
         return NUM
 
@@ -233,6 +274,6 @@ def averageif(*args):
     if not xs:
         return DIV0
     try:
-        return _num(math.fsum(xs) / len(xs))
+        return _num(_calc_sum(xs) / len(xs))
     except OverflowError:
         return NUM

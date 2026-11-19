@@ -89,5 +89,32 @@ class CriteriaLikeCalcTest(unittest.TestCase):
                 self.assertEqual(to_json(evaluate(formula, BOOK, "Sheet1")), want)
 
 
+
+# Calc adds SUMIF/AVERAGEIF's matches with its KahanSum, as SUM does; LibreOffice headless
+# on these cells gives every value below (math.fsum would give 2.8E-17 for the first).
+SUMS = {"sheets": {"S": {
+    "A1": 0.1, "A2": 0.2, "A3": -0.3, "B1": 1e-17, "B2": 0.7, "B3": 0.1,
+    "C1": 1e308, "C2": 1e308, "C3": -1e308, "D1": 1e308, "D2": -1e308, "D3": 1e308,
+}}}
+
+CALC_SUMS = [
+    ('=SUMIF(A1:A3,"<>")', 0),
+    ('=AVERAGEIF(A1:A3,"<>")', 0),
+    ('=SUMIF(A1:B3,"<>")', 0.8),
+    ('=AVERAGEIF(A1:B3,"<>")', 0.13333333333333333),
+    ('=SUMIF(B1:B3,"<>",A1)', 0),
+    ('=SUMIF(C1:C3,"<>")', E("#NUM!")),
+    ('=AVERAGEIF(C1:C3,"<>")', E("#NUM!")),
+    ('=SUMIF(D1:D3,"<>")', 1e308),
+]
+
+
+class SumsLikeCalcTest(unittest.TestCase):
+    def test_calc_sums(self):
+        for formula, want in CALC_SUMS:
+            with self.subTest(formula=formula):
+                self.assertEqual(to_json(evaluate(formula, SUMS, "S")), want)
+
+
 if __name__ == "__main__":
     unittest.main()
