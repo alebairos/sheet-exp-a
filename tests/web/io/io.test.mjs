@@ -46,3 +46,66 @@ test("edit keeps other sheets and is case-insensitive in its ref", async () => {
   await c.edit("b2", "x");
   assert.deepEqual(JSON.parse(c.saveJSON().text), { sheets: { One: { A1: 1, B2: "x" }, Two: { A1: "=One!A1" } } });
 });
+
+// The page itself (index.html's module script) over a minimal stand-in DOM: one keypress is one edit.
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
+
+function fakeElement(doc) {
+  const listeners = {};
+  return {
+    ownerDocument: doc, innerHTML: "", textContent: "", className: "", value: "", tabIndex: -1,
+    listeners,
+    addEventListener(type, fn) { (listeners[type] ||= []).push(fn); },
+    removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
+    dispatch(type, event) { for (const fn of [...(listeners[type] || [])]) fn({ target: this, preventDefault() {}, stopPropagation() {}, ...event }); },
+    querySelector() { return null; },
+    focus() {},
+  };
+}
+
+const settle = async () => { for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 0)); };
+
+test("the page mounts the grid once: one Delete is one compute, however many edits came before", async () => {
+  const root = fileURLToPath(new URL("../../../", import.meta.url));
+  const html = readFileSync(join(root, "web/io/index.html"), "utf8");
+  let script = /<script type="module">([\s\S]*?)<\/script>/.exec(html)[1];
+  script = script
+    .replace('"./io.js"', JSON.stringify(pathToFileURL(join(root, "web/io/io.js")).href))
+    .replace('"../grid/grid.js"', JSON.stringify(pathToFileURL(join(root, "web/grid/grid.js")).href));
+  const doc = { elements: {}, getElementById(id) { return (this.elements[id] ||= fakeElement(this)); } };
+  let computes = 0;
+  globalThis.document = doc;
+  globalThis.fetch = async (url, init) => {
+    computes++;
+    const book = JSON.parse(init.body);
+    return { ok: true, json: async () => book };
+  };
+  const dir = mkdtempSync(join(tmpdir(), "io-page-"));
+  try {
+    const file = join(dir, "page.mjs");
+    writeFileSync(file, script);
+    await import(pathToFileURL(file).href);
+    const grid = doc.getElementById("grid");
+    const cells = Object.fromEntries([1, 2, 3, 4, 5, 6].map((r) => ["A" + r, r]));
+    const text = JSON.stringify({ sheets: { Sheet1: cells } });
+    doc.getElementById("open").dispatch("change", { target: { files: [{ name: "six.json", text: async () => text }], value: "" } });
+    await settle();
+    assert.equal(computes, 1, "opening computes once");
+    for (let r = 1; r <= 6; r++) {
+      const before = computes;
+      grid.dispatch("keydown", { key: "Delete" });
+      await settle();
+      assert.equal(computes - before, 1, `Delete on A${r} computed ${computes - before} times`);
+      grid.dispatch("keydown", { key: "ArrowDown" });
+      await settle();
+    }
+    assert.equal((grid.listeners.keydown || []).length, 1, "the grid's key listener is added once");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    delete globalThis.document;
+    delete globalThis.fetch;
+  }
+});

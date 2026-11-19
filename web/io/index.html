@@ -41,24 +41,28 @@
     // The grid edits a copy of the computed sheet. Each change, find the cells the user typed into
     // and hand the controller only those, as typed; the grid's book never goes back to the controller.
     const changedRefs = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
+    // One grid for the page's lifetime: redraws go through its setState, so its listeners are added
+    // once and one keypress is one edit (mounting again on every redraw stacked listeners).
     let busy = Promise.resolve();
+    let shown = {};
+    let grid = null;
+    const onChange = (s) => {
+      const typed = s.book.sheets[s.sheet] || {};
+      const refs = changedRefs(shown, typed);
+      if (!refs.length) return;
+      busy = busy.then(async () => {
+        for (const ref of refs) await controller.edit(ref, inputText(typed[ref]));
+        showMessage();
+        show(s.selected);
+      });
+    };
     const show = (selected) => {
       const { computed, sheet } = controller.state;
-      const shown = computed.sheets[sheet] || {};
+      shown = computed.sheets[sheet] || {};
       let state = createState(computed, sheet);
       if (selected) state = select(state, selected);
-      mount(gridEl, state, {
-        onChange: (s) => {
-          const typed = s.book.sheets[s.sheet] || {};
-          const refs = changedRefs(shown, typed);
-          if (!refs.length) return;
-          busy = busy.then(async () => {
-            for (const ref of refs) await controller.edit(ref, inputText(typed[ref]));
-            showMessage();
-            show(s.selected);
-          });
-        },
-      });
+      if (grid) grid.setState(state);
+      else grid = mount(gridEl, state, { onChange });
     };
 
     document.getElementById("open").addEventListener("change", async (e) => {
