@@ -1,0 +1,122 @@
+// The walk-through in a real browser, with real clicks and keys, on web/io/index.html as serve.py serves it:
+// open a workbook, edit a formula in the formula bar, see the error, fix it, save.
+// Exits 0 printing "ok", 1 with a FAIL line naming the step that did not happen, 2 when there is no browser.
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { findBrowser, serve, launch, sleep } from "./browser.mjs";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const fail = (m) => { throw new Error(m); };
+const browser = findBrowser();
+if (!browser) { console.log("no browser: set CHROME or put google-chrome or chromium on PATH"); process.exit(2); }
+
+const dir = mkdtempSync(join(tmpdir(), "e2e-ui-walk-"));
+const file = join(dir, "walk.json");
+const downloads = mkdtempSync(join(tmpdir(), "e2e-ui-saved-"));
+writeFileSync(file, JSON.stringify({ sheets: { Sheet1: { A1: 10, A2: 2, B1: "=A1/A2" } } }));
+// Text that looks like a number stays text through the bar (shown '007, as Calc does).
+const textFile = join(dir, "text.json");
+writeFileSync(textFile, JSON.stringify({ sheets: { Sheet1: { A1: "007", A2: "x", B1: "=ISTEXT(A1)", B2: "=ISTEXT(A2)" } } }));
+
+const server = await serve(ROOT);
+let b = null;
+let code = 1;
+try {
+  b = await launch(browser);
+  const thrown = [];
+  b.on("Runtime.exceptionThrown", (p) => thrown.push(p.exceptionDetails.exception?.description ?? p.exceptionDetails.text));
+  await b.send("Runtime.enable");
+  await b.send("Page.enable");
+  await b.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+
+  const js = async (expr) => (await b.send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true })).result.value;
+  const until = async (what, expr, want) => {
+    let got;
+    for (let t = 0; t < 100; t++) { got = await js(expr); if (got === want) return; await sleep(100); }
+    fail(`${what}: wanted ${JSON.stringify(want)}, the page shows ${JSON.stringify(got)}`);
+  };
+  const click = async (sel) => {
+    const at = await js(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null;
+      const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    if (!at) fail(`the page has no ${sel}`);
+    for (const type of ["mousePressed", "mouseReleased"]) await b.send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 });
+  };
+  const BAR = '#formula-bar input[aria-label="Formula"]';
+  const cell = (ref) => `document.querySelector('#grid td[data-ref="${ref}"]')?.textContent.trim() ?? null`;
+  const barText = `document.querySelector('${BAR}')?.value ?? null`;
+  const barError = `document.querySelector('#formula-bar .error')?.textContent.trim() ?? ""`;
+  const enterInBar = async () => {
+    await click(BAR);
+    for (const type of ["keyDown", "keyUp"]) await b.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  };
+  const savedJSON = async (name) => {
+    await click("#save-json");
+    const out = join(downloads, name);
+    for (let t = 0; t < 100 && !existsSync(out); t++) await sleep(100);
+    await sleep(200);
+    if (!existsSync(out)) fail(`Save JSON downloaded no ${name}`);
+    return JSON.parse(readFileSync(out, "utf8"));
+  };
+  const typeInBar = async (text) => {
+    await click(BAR);
+    await b.send("Input.dispatchKeyEvent", { type: "rawKeyDown", commands: ["selectAll"], key: "a", code: "KeyA", modifiers: 2 });
+    await b.send("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", modifiers: 2 });
+    await b.send("Input.insertText", { text });
+    for (const type of ["keyDown", "keyUp"]) await b.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  };
+
+  await b.send("Page.navigate", { url: server.url + "/io/index.html" });
+  await until("the page loads with its grid and formula bar", `!!document.querySelector('#grid td[data-ref="A1"]') && !!document.querySelector('${BAR}')`, true);
+  // 1. Open walk.json through the file input, as a user picks it.
+  const doc = await b.send("DOM.getDocument");
+  const input = await b.send("DOM.querySelector", { nodeId: doc.root.nodeId, selector: "#open" });
+  if (!input.nodeId) fail("the page has no #open file input");
+  await b.send("DOM.setFileInputFiles", { nodeId: input.nodeId, files: [file] });
+  await until("after Open, B1 shows =A1/A2 computed", cell("B1"), "5");
+  // 2. Select B1: the bar shows its formula as typed, no error.
+  await click('#grid td[data-ref="B1"]');
+  await until("selecting B1 shows its formula in the bar", barText, "=A1/A2");
+  await until("B1 has no error", barError, "");
+  // 3. Divide by the blank A3: the error shows in the cell and in the bar, B1 still selected.
+  await typeInBar("=A1/A3");
+  await until("after the edit, B1 shows the error", cell("B1"), "#DIV/0!");
+  await until("the bar keeps the edited formula", barText, "=A1/A3");
+  await until("the bar shows the error", barError, "#DIV/0!");
+  await until("B1 stays selected", `document.querySelector('#grid td.selected')?.dataset.ref ?? null`, "B1");
+  // 4. Fix it: the value comes back and the error goes.
+  await typeInBar("=A1/A2*3");
+  await until("after the fix, B1 shows 15", cell("B1"), "15");
+  await until("the bar shows the fixed formula", barText, "=A1/A2*3");
+  await until("the error is gone from the bar", barError, "");
+  // 5. Save JSON: walk.json comes back with the fixed formula as typed and the other cells.
+  const saved = await savedJSON("walk.json");
+  const want = { sheets: { Sheet1: { A1: 10, A2: 2, B1: "=A1/A2*3" } } };
+  if (JSON.stringify(saved) !== JSON.stringify(want)) fail(`saved ${JSON.stringify(saved)}, wanted ${JSON.stringify(want)}`);
+  // 6. Text that looks like a number: Enter in the bar keeps it text, and '42 types the text "42".
+  await b.send("DOM.setFileInputFiles", { nodeId: input.nodeId, files: [textFile] });
+  await until("after Open, ISTEXT(A1) is TRUE", cell("B1"), "TRUE");
+  await click('#grid td[data-ref="A1"]');
+  await until("the bar shows the text 007 as '007", barText, "'007");
+  await enterInBar();
+  await sleep(300);
+  await until("Enter in the bar keeps A1 text: ISTEXT(A1) stays TRUE", cell("B1"), "TRUE");
+  await until("A1 still shows 007", cell("A1"), "007");
+  await click('#grid td[data-ref="A2"]');
+  await until("selecting A2 shows x in the bar", barText, "x");
+  await typeInBar("'42");
+  await until("'42 in the bar types text: ISTEXT(A2) is TRUE", cell("B2"), "TRUE");
+  const savedText = await savedJSON("text.json");
+  const wantText = { sheets: { Sheet1: { A1: "007", A2: "42", B1: "=ISTEXT(A1)", B2: "=ISTEXT(A2)" } } };
+  if (JSON.stringify(savedText) !== JSON.stringify(wantText)) fail(`saved ${JSON.stringify(savedText)}, wanted ${JSON.stringify(wantText)}`);
+  if (thrown.length) fail("the page threw: " + thrown.join(" | "));
+  console.log("ok");
+  code = 0;
+} catch (e) {
+  console.log("FAIL " + (e && e.message ? e.message : e));
+} finally {
+  if (b) b.close();
+  server.close();
+}
+process.exit(code);
