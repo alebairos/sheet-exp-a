@@ -9,6 +9,11 @@
     .bar { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
     #message { min-height: 1.2em; margin: .25rem 0 .5rem; color: #444; }
     #message.error { color: #b00020; }
+    #formula-bar .formula-bar { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+    #formula-bar .ref { min-width: 3em; font-weight: 600; }
+    #formula-bar .fx { font-style: italic; color: #666; }
+    #formula-bar .text { flex: 1; max-width: 40em; font-family: ui-monospace, monospace; }
+    #formula-bar .error { color: #b00020; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -18,10 +23,12 @@
     <button id="save-csv">Save CSV</button>
   </div>
   <p id="message"></p>
+  <div id="formula-bar"></div>
   <div id="grid" tabindex="0"></div>
   <script type="module">
     import { createController, download } from "./io.js";
     import { createState, mount, select, inputText } from "../grid/grid.js";
+    import { mount as mountBar } from "../formula_bar/formula_bar.js";
 
     // The one engine: serve.py answers POST /compute with ./engine's computed workbook.
     const compute = async (book) => {
@@ -46,7 +53,22 @@
     let busy = Promise.resolve();
     let shown = {};
     let grid = null;
+    // The formula bar follows the grid's selection: the selected cell as typed (formulas kept) and,
+    // when it computes to an error, the error's name. Enter in the bar edits that cell.
+    let selected = "A1";
+    const barState = () => ({ ref: selected, raw: controller.state.book, computed: controller.state.computed, sheet: controller.state.sheet });
+    const bar = mountBar(document.getElementById("formula-bar"), barState(), {
+      onCommit: (raw, ref, sheet) => {
+        const typed = raw.sheets[sheet]?.[ref];
+        busy = busy.then(async () => {
+          await controller.edit(ref, typed === undefined ? "" : inputText(typed));
+          showMessage();
+          show(ref);
+        });
+      },
+    });
     const onChange = (s) => {
+      if (s.selected !== selected) { selected = s.selected; bar.update(barState()); }
       const typed = s.book.sheets[s.sheet] || {};
       const refs = changedRefs(shown, typed);
       if (!refs.length) return;
@@ -56,11 +78,12 @@
         show(s.selected);
       });
     };
-    const show = (selected) => {
+    const show = (ref) => {
+      selected = ref || "A1";
       const { computed, sheet } = controller.state;
       shown = computed.sheets[sheet] || {};
-      let state = createState(computed, sheet);
-      if (selected) state = select(state, selected);
+      const state = select(createState(computed, sheet), selected);
+      bar.update(barState());
       if (grid) grid.setState(state);
       else grid = mount(gridEl, state, { onChange });
     };
