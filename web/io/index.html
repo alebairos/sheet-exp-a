@@ -58,10 +58,21 @@
     let selected = "A1";
     const barState = () => ({ ref: selected, raw: controller.state.book, computed: controller.state.computed, sheet: controller.state.sheet });
     const bar = mountBar(document.getElementById("formula-bar"), barState(), {
+      // The bar hands back the cell already typed by its own parseInput ('007 is the text "007"),
+      // so that value goes into the workbook as is: re-entering it as grid text would turn it into 7.
       onCommit: (raw, ref, sheet) => {
         const typed = raw.sheets[sheet]?.[ref];
         busy = busy.then(async () => {
-          await controller.edit(ref, typed === undefined ? "" : inputText(typed));
+          const { book } = controller.state;
+          const cells = { ...(book.sheets[sheet] || {}) };
+          if (typed === undefined) delete cells[ref];
+          else cells[ref] = typed;
+          controller.state.book = { ...book, sheets: { ...book.sheets, [sheet]: cells } };
+          try {
+            controller.state.computed = await compute(controller.state.book);
+          } catch (e) {
+            controller.state.message = "Could not compute: " + (e && e.message ? e.message : e);
+          }
           showMessage();
           show(ref);
         });

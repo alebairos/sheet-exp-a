@@ -16,6 +16,9 @@ const dir = mkdtempSync(join(tmpdir(), "e2e-ui-walk-"));
 const file = join(dir, "walk.json");
 const downloads = mkdtempSync(join(tmpdir(), "e2e-ui-saved-"));
 writeFileSync(file, JSON.stringify({ sheets: { Sheet1: { A1: 10, A2: 2, B1: "=A1/A2" } } }));
+// Text that looks like a number stays text through the bar (shown '007, as Calc does).
+const textFile = join(dir, "text.json");
+writeFileSync(textFile, JSON.stringify({ sheets: { Sheet1: { A1: "007", A2: "x", B1: "=ISTEXT(A1)", B2: "=ISTEXT(A2)" } } }));
 
 const server = await serve(ROOT);
 let b = null;
@@ -44,6 +47,18 @@ try {
   const cell = (ref) => `document.querySelector('#grid td[data-ref="${ref}"]')?.textContent.trim() ?? null`;
   const barText = `document.querySelector('${BAR}')?.value ?? null`;
   const barError = `document.querySelector('#formula-bar .error')?.textContent.trim() ?? ""`;
+  const enterInBar = async () => {
+    await click(BAR);
+    for (const type of ["keyDown", "keyUp"]) await b.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+  };
+  const savedJSON = async (name) => {
+    await click("#save-json");
+    const out = join(downloads, name);
+    for (let t = 0; t < 100 && !existsSync(out); t++) await sleep(100);
+    await sleep(200);
+    if (!existsSync(out)) fail(`Save JSON downloaded no ${name}`);
+    return JSON.parse(readFileSync(out, "utf8"));
+  };
   const typeInBar = async (text) => {
     await click(BAR);
     await b.send("Input.dispatchKeyEvent", { type: "rawKeyDown", commands: ["selectAll"], key: "a", code: "KeyA", modifiers: 2 });
@@ -76,14 +91,25 @@ try {
   await until("the bar shows the fixed formula", barText, "=A1/A2*3");
   await until("the error is gone from the bar", barError, "");
   // 5. Save JSON: walk.json comes back with the fixed formula as typed and the other cells.
-  await click("#save-json");
-  const out = join(downloads, "walk.json");
-  for (let t = 0; t < 100 && !existsSync(out); t++) await sleep(100);
-  await sleep(200);
-  if (!existsSync(out)) fail("Save JSON downloaded no walk.json");
-  const saved = JSON.parse(readFileSync(out, "utf8"));
+  const saved = await savedJSON("walk.json");
   const want = { sheets: { Sheet1: { A1: 10, A2: 2, B1: "=A1/A2*3" } } };
   if (JSON.stringify(saved) !== JSON.stringify(want)) fail(`saved ${JSON.stringify(saved)}, wanted ${JSON.stringify(want)}`);
+  // 6. Text that looks like a number: Enter in the bar keeps it text, and '42 types the text "42".
+  await b.send("DOM.setFileInputFiles", { nodeId: input.nodeId, files: [textFile] });
+  await until("after Open, ISTEXT(A1) is TRUE", cell("B1"), "TRUE");
+  await click('#grid td[data-ref="A1"]');
+  await until("the bar shows the text 007 as '007", barText, "'007");
+  await enterInBar();
+  await sleep(300);
+  await until("Enter in the bar keeps A1 text: ISTEXT(A1) stays TRUE", cell("B1"), "TRUE");
+  await until("A1 still shows 007", cell("A1"), "007");
+  await click('#grid td[data-ref="A2"]');
+  await until("selecting A2 shows x in the bar", barText, "x");
+  await typeInBar("'42");
+  await until("'42 in the bar types text: ISTEXT(A2) is TRUE", cell("B2"), "TRUE");
+  const savedText = await savedJSON("text.json");
+  const wantText = { sheets: { Sheet1: { A1: "007", A2: "42", B1: "=ISTEXT(A1)", B2: "=ISTEXT(A2)" } } };
+  if (JSON.stringify(savedText) !== JSON.stringify(wantText)) fail(`saved ${JSON.stringify(savedText)}, wanted ${JSON.stringify(wantText)}`);
   if (thrown.length) fail("the page threw: " + thrown.join(" | "));
   console.log("ok");
   code = 0;
