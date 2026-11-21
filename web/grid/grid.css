@@ -11,7 +11,8 @@ table.grid { border-collapse: collapse; font: 14px system-ui, sans-serif; }
    redrawn for the rows and columns scrolled to. Fixed sizes keep the window maths exact. */
 .grid-scroll { overflow: auto; position: relative; outline: none; max-height: 100vh; }
 .grid-space { position: relative; }
-.grid-space table.grid { position: sticky; top: 0; left: 0; table-layout: fixed; }
+.grid-space .grid-view { position: sticky; top: 0; left: 0; overflow: hidden; }
+.grid-space table.grid { table-layout: fixed; }
 .grid-space .grid th.corner, .grid-space .grid th.row { width: 48px; min-width: 48px; max-width: 48px; box-sizing: border-box; }
 .grid-space .grid thead th { height: 24px; box-sizing: border-box; }
 .grid-space .grid td { width: 88px; min-width: 88px; max-width: 88px; height: 22px; box-sizing: border-box; overflow: hidden; }

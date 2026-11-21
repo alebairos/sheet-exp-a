@@ -123,6 +123,16 @@ try {
   await until("L2001 shows its CSV value", text("L2001"), CALC.csv.L2001);
   await until("the row header 2001 is in view", seen("#grid th", "2001"), true, 10);
   await until("the column header L is in view", seen("#grid th", "L"), true, 10);
+  // At the end of the scroll range the headers stay at the box's edges, not lifted past them: the column
+  // headers' top is not above the box's inner top, nor (wheeled to the far right) the row headers' left
+  // left of its inner left. A sticky table bigger than the box was pushed back there, by up to a row.
+  const edge = (side) => `(() => { const g = document.getElementById("grid"), b = g.getBoundingClientRect();
+    const h = ${side === "top" ? `document.querySelector("#grid thead")` : `document.querySelector("#grid tbody th.row")`}.getBoundingClientRect();
+    return Math.round(${side === "top" ? "h.top - (b.top + g.clientTop)" : "h.left - (b.left + g.clientLeft)"}) >= 0; })()`;
+  await until("at the bottom of the scroll range the column headers sit at the top of the grid", edge("top"), true, 10);
+  for (let i = 0; i < 20; i++) await wheel(300, 0);
+  await until("at the right end of the scroll range the row headers sit at the left of the grid", edge("left"), true, 10);
+  await until("at the right end the column headers still sit at the top of the grid", edge("top"), true, 10);
   for (let i = 0; i < 400 && !(await js(seenCell("A1"))); i++) await wheel(-3000, -400);
   await until("wheeling back up and left shows A1 again", seenCell("A1"), true, 10);
   const sorted = [...steps].sort((x, y) => x - y);
