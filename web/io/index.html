@@ -5,7 +5,8 @@
   <title>Workbook</title>
   <link rel="stylesheet" href="../grid/grid.css">
   <style>
-    body { font-family: system-ui, sans-serif; margin: 1rem; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; box-sizing: border-box; height: 100vh; display: flex; flex-direction: column; }
+    #grid { flex: 1; min-height: 10rem; border: 1px solid #ccc; }
     .bar { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
     #message { min-height: 1.2em; margin: .25rem 0 .5rem; color: #444; }
     #message.error { color: #b00020; }
@@ -86,16 +87,17 @@
       busy = busy.then(async () => {
         for (const ref of refs) await controller.edit(ref, inputText(typed[ref]));
         showMessage();
-        show(s.selected);
+        // Where the user is now, not where the edit was: they may have moved on while it computed.
+        show(grid ? grid.state.selected : s.selected);
       });
     };
-    const show = (ref) => {
+    const show = (ref, reveal = false) => {
       selected = ref || "A1";
       const { computed, sheet } = controller.state;
       shown = computed.sheets[sheet] || {};
       const state = select(createState(computed, sheet), selected);
       bar.update(barState());
-      if (grid) grid.setState(state);
+      if (grid) grid.setState(state, { reveal });
       else grid = mount(gridEl, state, { onChange });
     };
 
@@ -105,7 +107,7 @@
       await controller.openFile(file);
       e.target.value = "";
       showMessage();
-      show();
+      show(undefined, true);
     });
     for (const [id, save] of [["save-json", () => controller.saveJSON()], ["save-csv", () => controller.saveCSV()]]) {
       document.getElementById(id).addEventListener("click", () => {

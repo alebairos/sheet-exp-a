@@ -7,3 +7,12 @@ table.grid { border-collapse: collapse; font: 14px system-ui, sans-serif; }
 .grid td.err { color: #b00020; text-align: center; }
 .grid td.selected { outline: 2px solid #1a73e8; outline-offset: -2px; }
 .grid td input { width: 100%; box-sizing: border-box; border: 0; padding: 0; font: inherit; outline: none; background: transparent; }
+/* The scroll box (a-v1-big-sheets): the space is as big as the sheet; the table stays in view and is
+   redrawn for the rows and columns scrolled to. Fixed sizes keep the window maths exact. */
+.grid-scroll { overflow: auto; position: relative; outline: none; max-height: 100vh; }
+.grid-space { position: relative; }
+.grid-space table.grid { position: sticky; top: 0; left: 0; table-layout: fixed; }
+.grid-space .grid th.corner, .grid-space .grid th.row { width: 48px; min-width: 48px; max-width: 48px; box-sizing: border-box; }
+.grid-space .grid thead th { height: 24px; box-sizing: border-box; }
+.grid-space .grid td { width: 88px; min-width: 88px; max-width: 88px; height: 22px; box-sizing: border-box; overflow: hidden; }
+.grid-space .grid tbody th { height: 22px; box-sizing: border-box; }
