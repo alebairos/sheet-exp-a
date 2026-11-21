@@ -77,12 +77,22 @@ export async function launch(browser) {
     // Browser.* and Target.* go to the browser itself, everything else to the attached page.
     send: (method, params) => call(method, params, /^(Browser|Target)\./.test(method) ? undefined : sessionId),
     on: (ev, fn) => handlers.push([ev, fn]),
-    // Stops the browser and removes its profile directory once it has exited (no temp dir left behind).
+    // Stops the browser, then removes its profile directory: best effort, never throws and never hangs.
+    // Chromium's helper processes can still be writing there when the main process exits, so the removal
+    // retries and a directory that will not go is left behind rather than failing a test that passed.
     close: () => new Promise((ok) => {
-      const done = () => { rmSync(profile, { recursive: true, force: true }); ok(); };
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}
+        ok();
+      };
+      const timer = setTimeout(done, 5000);
       if (proc.exitCode !== null || proc.signalCode !== null) return done();
       proc.once("exit", done);
-      proc.kill();
+      try { proc.kill(); } catch { done(); }
     }),
   };
 }
