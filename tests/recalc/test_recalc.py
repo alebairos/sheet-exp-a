@@ -19,9 +19,13 @@ def sheet(cells, **more):
 
 class Order(unittest.TestCase):
     def test_range_over_formulas_is_read_after_them(self):
-        got = sheet({"B1": "=A1:A3", "C1": "=A2:A2*10", "A2": "=A3+1", "A3": "=1+1"})
+        got = sheet({"B1": "=A1:A3", "C1": "=A2:A2*10", "A2": "=A3+1", "A3": "=1+1", "B2": "=A1:A3*2", "B5": "=A1:A3"})
         self.assertEqual(got["C1"], 30)
-        self.assertEqual(got["B1"], {"error": "#VALUE!"})  # a 3-cell range in operator context
+        # A 3-cell range where one value is expected takes the cell in the formula's row, as Calc does
+        # (implicit intersection, a-v1-eval-edges): A1 is blank, A2 is computed first; row 5 is outside.
+        self.assertEqual(got["B1"], 0)
+        self.assertEqual(got["B2"], 6)
+        self.assertEqual(got["B5"], {"error": "#VALUE!"})
 
     def test_output_keeps_input_order_and_constants(self):
         book = {"sheets": {"S": {"B2": "=A1*2", "A1": 1.5, "Z1": {"error": "#N/A"}, "T": "x"}}}

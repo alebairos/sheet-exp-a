@@ -17,6 +17,12 @@ reference in operator context).
 
 Referenced formula cells are read as they stand in the book; computing them
 first is recalculation's job (a-i4).
+
+Implicit intersection (a-v1-eval-edges): given the formula's own cell
+(``cell="C7"``), a range used where one value is expected (an operator's
+operand, unary minus, %, the cell's final value) takes the cell in the
+formula's row (a one-column range) or column (a one-row range), as Calc does;
+outside the range, or without the position, it is ``#VALUE!``.
 """
 
 import math
@@ -76,11 +82,23 @@ class Range:
         return [from_json(cells.get(l + str(r)))
                 for r in range(self.top, self.bottom + 1) for l in letters]
 
-    def collapse(self):
-        """The Value of a one-cell range; #VALUE! for more than one cell."""
-        if self.rows == 1 and self.cols == 1:
-            return self.cell(self.top, self.left)
-        return VALUE
+    def collapse(self, pos=None):
+        """The Value of the range where one value is expected: a one-cell range is its cell; with the
+        formula's position ``(row, col)``, a taller range takes the cell in that row and a wider one the
+        cell in that column (Calc's implicit intersection); anything else is #VALUE!."""
+        if self.rows == 1:
+            row = self.top
+        elif pos is not None and self.top <= pos[0] <= self.bottom:
+            row = pos[0]
+        else:
+            return VALUE
+        if self.cols == 1:
+            col = self.left
+        elif pos is not None and self.left <= pos[1] <= self.right:
+            col = pos[1]
+        else:
+            return VALUE
+        return self.cell(row, col)
 
     def __repr__(self):
         a = p.col_to_letters(self.left) + str(self.top)
@@ -109,9 +127,20 @@ def _ref_range(node, book, sheet):
     return Range(book, name, start.row, start.col, end.row, end.col)
 
 
-def _scalar(v):
-    """A value in operator context: a Range collapses to its single cell."""
-    return v.collapse() if isinstance(v, Range) else v
+def _scalar(v, pos=None):
+    """A value in operator context: a Range collapses to one cell (implicit intersection at ``pos``)."""
+    return v.collapse(pos) if isinstance(v, Range) else v
+
+
+def _position(cell):
+    """'C7' -> (7, 3), the (row, col) of the formula's own cell; None without one."""
+    if not cell:
+        return None
+    letters = cell.rstrip("0123456789")
+    digits = cell[len(letters):]
+    if not letters.isalpha() or not digits or digits[0] == "0":
+        return None
+    return int(digits), p.letters_to_col(letters)
 
 
 def _num(x):
@@ -184,7 +213,7 @@ def _binary(op, left, right):
     return VALUE
 
 
-def _call(node, book, sheet):
+def _call(node, book, sheet, pos=None):
     fn = registry().get(node.name.upper())
     if fn is None:
         return NAME
@@ -193,14 +222,14 @@ def _call(node, book, sheet):
         if isinstance(a, p.Missing):
             args.append(BLANK)
         else:
-            args.append(_eval(a, book, sheet))
+            args.append(_eval(a, book, sheet, pos))
     result = fn(*args)
     if isinstance(result, (Value, Range)):
         return result
     return from_json(result)
 
 
-def _eval(node, book, sheet):
+def _eval(node, book, sheet, pos=None):
     """A node's value: a Value, or a Range for a reference (not yet collapsed)."""
     if isinstance(node, p.Number):
         return _num(float(node.value))
@@ -217,30 +246,33 @@ def _eval(node, book, sheet):
     if isinstance(node, p.Missing):
         return BLANK
     if isinstance(node, p.Call):
-        return _call(node, book, sheet)
+        return _call(node, book, sheet, pos)
     if isinstance(node, p.Unary):
-        v = to_number(_scalar(_eval(node.operand, book, sheet)))
+        v = to_number(_scalar(_eval(node.operand, book, sheet, pos), pos))
         return v if isinstance(v, Error) else _num(-v.value)
     if isinstance(node, p.Percent):
-        v = to_number(_scalar(_eval(node.operand, book, sheet)))
+        v = to_number(_scalar(_eval(node.operand, book, sheet, pos), pos))
         return v if isinstance(v, Error) else _num(v.value / 100.0)
     if isinstance(node, p.Binary):
-        left = _scalar(_eval(node.left, book, sheet))
-        right = _scalar(_eval(node.right, book, sheet))
+        left = _scalar(_eval(node.left, book, sheet, pos), pos)
+        right = _scalar(_eval(node.right, book, sheet, pos), pos)
         return _binary(node.op, left, right)
     return VALUE
 
 
-def evaluate_node(node, book, sheet):
-    """Evaluate a parse tree to a cell's final Value (a lone blank shows as 0)."""
-    v = _scalar(_eval(node, book, sheet))
+def evaluate_node(node, book, sheet, cell=None):
+    """Evaluate a parse tree to a cell's final Value (a lone blank shows as 0); ``cell`` is the
+    formula's own address on ``sheet``, for implicit intersection."""
+    pos = _position(cell)
+    v = _scalar(_eval(node, book, sheet, pos), pos)
     return Number(0.0) if isinstance(v, Blank) else v
 
 
-def evaluate(formula, book, sheet):
-    """The Value of ``formula`` (cell text with its leading ``=``) on ``sheet`` of ``book``."""
+def evaluate(formula, book, sheet, cell=None):
+    """The Value of ``formula`` (cell text with its leading ``=``) on ``sheet`` of ``book``, written in
+    ``cell`` (its address, optional)."""
     try:
         tree = p.parse(formula)
     except p.ParseError:
         return VALUE
-    return evaluate_node(tree, book, sheet)
+    return evaluate_node(tree, book, sheet, cell)

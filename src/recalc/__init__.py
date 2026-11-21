@@ -237,7 +237,7 @@ class Workbook:
     def _evaluate(self, key):
         sheet, addr = key
         tree = self._trees[key]
-        self._values["sheets"][sheet][addr] = VALUE if tree is None else evaluate_node(tree, self._values, sheet)
+        self._values["sheets"][sheet][addr] = VALUE if tree is None else evaluate_node(tree, self._values, sheet, addr)
 
     # --- the API ----------------------------------------------------------
 
