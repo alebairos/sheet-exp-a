@@ -1,0 +1,127 @@
+"""Where src/values/collation_data.py comes from: LibreOffice Calc's own order of single characters.
+
+Not a test (./test.sh does not run it; it needs soffice and python3-uno). It puts each character of the blocks
+below in a cell of a new Calc document (default options: case-sensitive, en-US), ranks every one with
+=SUMPRODUCT(range<cell) (how many characters Calc sorts before it), and writes ORDER: the characters that carry
+their own primary weight in text_rules (no compatibility decomposition, lower case or caseless, not a digit of
+another script, not a number sign of a small value, letters only of Latin, Greek and Cyrillic), in Calc's order,
+and SCRIPTS: the other scripts in Calc's order. Run: python3 tests/values/calc_collation_probe.py
+"""
+import os, subprocess, sys, tempfile, time, unicodedata
+
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BLOCKS = [(0x20, 0x7e), (0xa0, 0x24f), (0x250, 0x2ff), (0x1d00, 0x1dbf), (0x1e00, 0x1eff), (0x2000, 0x205e),
+          (0x2070, 0x209c), (0x20a0, 0x20c0), (0x2100, 0x218b), (0x2190, 0x21ff), (0x2200, 0x22ff),
+          (0x2300, 0x23ff), (0x2460, 0x24ff), (0x2500, 0x25ff), (0x2600, 0x26ff), (0x2700, 0x27bf),
+          (0x27c0, 0x27ef), (0x2900, 0x2aff), (0x2b00, 0x2b2f), (0x2c60, 0x2c7f), (0x2e00, 0x2e5d),
+          (0xa720, 0xa7ff), (0x3000, 0x303f), (0xfb00, 0xfb06), (0xff01, 0xff5e), (0x370, 0x3ff),
+          (0x400, 0x45f), (0x5d0, 0x5ea), (0x627, 0x64a), (0x3041, 0x3096), (0x4e00, 0x4e20),
+          (0x1f300, 0x1f64f), (0x1f680, 0x1f6ff), (0x1f900, 0x1f9ff), (0x1fa70, 0x1faff)]
+SECONDARY = set("łđħøðſæœß")  # text_rules._SPECIAL: a base letter with a mark of their own
+
+
+def probed():
+    out = []
+    for a, b in BLOCKS:
+        for c in range(a, b + 1):
+            cat = unicodedata.category(chr(c))
+            if cat in ("Cn", "Cc", "Cs", "Co", "Cf") or cat.startswith("M"):
+                continue
+            out.append(chr(c))
+    return out
+
+
+def _small_number(ch):
+    """As text_rules._small_number (kept here so the probe runs before collation_data.py exists)."""
+    v = unicodedata.numeric(ch, None)
+    return None if v is None or v != int(v) or not 0 <= v <= 20 else str(int(v))
+
+
+def own_primary(ch):
+    k = unicodedata.normalize("NFKD", ch)
+    if unicodedata.category(ch)[0] in "PS" and k != ch and (k[0] == " " or unicodedata.category(k[0]).startswith("M")):
+        return True  # a spacing accent (´ ¨ ¯ ¸): Calc sorts it as a symbol of its own
+    if k != ch or ch.lower() != ch or ch in SECONDARY:
+        return False
+    cat = unicodedata.category(ch)
+    if cat == "Nd" and not "0" <= ch <= "9":
+        return False
+    if cat in ("No", "Nl") and _small_number(ch) is not None:  # text_rules: sorts as that number
+        return False
+    return not (cat in ("Lu", "Ll", "Lt", "Lo") and unicodedata.name(ch, "").split(" ")[0] not in _PROBED_SCRIPTS)
+
+
+_PROBED_SCRIPTS = ("LATIN", "GREEK", "CYRILLIC")  # their letters are in ORDER; other scripts' by SCRIPTS
+
+
+def script_samples():
+    """The first letter of each script (the first word of its Unicode name), to rank the scripts."""
+    out = {}
+    for c in range(0x370, 0x30000):
+        ch = chr(c)
+        name = unicodedata.name(ch, "")
+        if unicodedata.category(ch) in ("Lo", "Ll", "Lu") and name and unicodedata.normalize("NFKD", ch) == ch:
+            out.setdefault(name.split(" ")[0], ch)
+    for w in _PROBED_SCRIPTS:
+        out.pop(w, None)
+    return out
+
+
+def rank(chars, port=2399):
+    import uno
+    d = tempfile.mkdtemp()
+    p = subprocess.Popen(["soffice", "--headless", "--invisible", "--norestore",
+                          "-env:UserInstallation=file://" + d + "/p",
+                          "--accept=socket,host=127.0.0.1,port=%d;urp;" % port], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    try:
+        ctx = uno.getComponentContext()
+        res = ctx.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", ctx)
+        for _ in range(120):
+            try:
+                c = res.resolve("uno:socket,host=127.0.0.1,port=%d;urp;StarOffice.ComponentContext" % port)
+                break
+            except Exception:
+                time.sleep(0.5)
+        doc = c.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", c).loadComponentFromURL(
+            "private:factory/scalc", "_blank", 0, ())
+        sh, n = doc.Sheets.getByIndex(0), len(chars)
+        for i, ch in enumerate(chars):
+            sh.getCellRangeByName("A%d" % (i + 1)).setString(ch)
+            sh.getCellRangeByName("B%d" % (i + 1)).setFormula("=SUMPRODUCT($A$1:$A$%d<A%d)" % (n, i + 1))
+        doc.calculateAll()
+        out = [int(sh.getCellRangeByName("B%d" % (i + 1)).getValue()) for i in range(n)]
+        doc.close(True)
+        return out
+    finally:
+        p.kill()
+
+
+def write(order, ties, scripts):
+    lines = ['"""Generated by tests/values/calc_collation_probe.py from LibreOffice Calc 26.8.1.1 (new document,',
+             'en-US); do not edit by hand. ORDER: characters with a primary weight of their own, in Calc\'s order.',
+             'TIES: characters Calc sorts equal to the character before them in ORDER. SCRIPTS: see below."""',
+             "ORDER = ("]
+    for i in range(0, len(order), 40):
+        lines.append("    %s" % repr(order[i:i + 40]))  # printable characters as they are, others escaped
+    lines += [")", "TIES = %s" % repr("".join(ties)),
+              "# The other scripts, by the first word of their letters' Unicode names, in Calc's order.", "SCRIPTS = ("]
+    for i in range(0, len(scripts), 10):
+        lines.append("    %s," % ", ".join(repr(w) for w in scripts[i:i + 10]))
+    lines += [")", ""]
+    open(os.path.join(ROOT, "src", "values", "collation_data.py"), "w").write("\n".join(lines))
+
+
+if __name__ == "__main__":
+    chars = [c for c in probed() if own_primary(c)]
+    r = rank(chars)
+    order, ties, last = "", [], None
+    for rk, ch in sorted(zip(r, chars)):
+        if rk == last:
+            ties.append(ch)
+        order += ch
+        last = rk
+    samples = script_samples()
+    scripts = [w for _, w in sorted(zip(rank(list(samples.values())), samples))]
+    write(order, ties, scripts)
+    print("%d characters, %d ties, %d scripts" % (len(order), len(ties), len(scripts)))
