@@ -85,6 +85,17 @@ export function parseInput(text) {
   return text;
 }
 
+/**
+ * Text typed into a cell's editor as a cell value: parseInput, except that a leading apostrophe makes
+ * the rest text as typed (Calc's rule, and the formula bar's: '007 is the text "007", ' alone is a
+ * blank). The editor can open with that apostrophe (the page's textOf), so a commit reads it back.
+ */
+export function typedInput(text) {
+  const s = String(text ?? "");
+  if (s.startsWith("'")) return s.length > 1 ? s.slice(1) : undefined;
+  return parseInput(s);
+}
+
 /** The text an editor starts with for a cell: its value as typed back. */
 export function inputText(v) {
   if (v === null || v === undefined || typeof v === "object") return "";
@@ -95,7 +106,7 @@ export function inputText(v) {
 export function edit(state, ref, text) {
   const key = String(ref).toUpperCase();
   const cells = { ...cellsOf(state) };
-  const v = parseInput(text);
+  const v = typedInput(text);
   if (v === undefined) delete cells[key];
   else cells[key] = v;
   return { ...state, book: { ...state.book, sheets: { ...state.book.sheets, [state.sheet]: cells } } };

@@ -28,7 +28,7 @@
   <div id="grid" tabindex="0"></div>
   <script type="module">
     import { createController, download } from "./io.js";
-    import { createState, mount, select } from "../grid/grid.js";
+    import { createState, mount, select, typedInput } from "../grid/grid.js";
     import { mount as mountBar, barText } from "../formula_bar/formula_bar.js";
 
     // The one engine: serve.py answers POST /compute with ./engine's computed workbook.
@@ -62,21 +62,25 @@
       onCommit: (raw, ref, sheet) => {
         const typed = raw.sheets[sheet]?.[ref];
         busy = busy.then(async () => {
-          const { book } = controller.state;
-          const cells = { ...(book.sheets[sheet] || {}) };
-          if (typed === undefined) delete cells[ref];
-          else cells[ref] = typed;
-          controller.state.book = { ...book, sheets: { ...book.sheets, [sheet]: cells } };
-          try {
-            controller.state.computed = await compute(controller.state.book);
-          } catch (e) {
-            controller.state.message = "Could not compute: " + (e && e.message ? e.message : e);
-          }
+          await putTyped(sheet, ref, typed);
           showMessage();
           show(ref);
         });
       },
     });
+    // A value already typed goes into the workbook as is, then the workbook is computed again.
+    const putTyped = async (sheet, ref, typed) => {
+      const { book } = controller.state;
+      const cells = { ...(book.sheets[sheet] || {}) };
+      if (typed === undefined) delete cells[ref];
+      else cells[ref] = typed;
+      controller.state.book = { ...book, sheets: { ...book.sheets, [sheet]: cells } };
+      try {
+        controller.state.computed = await compute(controller.state.book);
+      } catch (e) {
+        controller.state.message = "Could not compute: " + (e && e.message ? e.message : e);
+      }
+    };
     const onChange = (s) => {
       if (s.selected !== selected) { selected = s.selected; bar.update(barState()); }
     };
@@ -85,7 +89,10 @@
     const textOf = (ref) => barText(controller.state.book, controller.state.sheet, ref);
     const onEdit = (ref, text) => {
       busy = busy.then(async () => {
-        await controller.edit(ref, text);
+        // Text after Calc's apostrophe ('007, as the editor opens number-like text) stays text, as in
+        // the bar; the controller's edit types text by the grid's rules, which would read 007 as 7.
+        if (String(text).startsWith("'")) await putTyped(controller.state.sheet, ref, typedInput(text));
+        else await controller.edit(ref, text);
         showMessage();
         // Where the user is now, not where the edit was: they may have moved on while it computed.
         show(grid ? grid.state.selected : ref);
