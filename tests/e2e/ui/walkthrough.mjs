@@ -116,7 +116,7 @@ try {
 } catch (e) {
   console.log("FAIL " + (e && e.message ? e.message : e));
 } finally {
-  if (b) b.close();
+  if (b) await b.close();
   server.close();
 }
 process.exit(code);
