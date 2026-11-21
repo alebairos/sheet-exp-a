@@ -114,9 +114,11 @@ class CallTest(unittest.TestCase):
 
 
 class MalformedTest(unittest.TestCase):
-    def test_unparseable_formula_is_an_error_value(self):
-        for f in ["=1+", "=(", "=SUM(1,"]:
-            self.assertEqual(ev(f), E("#VALUE!"), f)
+    def test_unparseable_formula_is_calcs_error_value(self):
+        # Calc's codes (plan a-v1-parse-fidelity, run in LibreOffice Calc 26.8.1.1): ending where an
+        # operand is expected is Err:520 at top level and Err:511 inside an open '('.
+        for f, code in [("=1+", "Err:520"), ("=(", "Err:511"), ("=SUM(1,", "Err:511")]:
+            self.assertEqual(ev(f), E(code), f)
 
     def test_missing_final_parenthesis_is_closed_as_in_calc(self):
         self.assertEqual(ev("=SUM(1"), 1)

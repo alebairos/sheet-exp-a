@@ -24,7 +24,17 @@ from .nodes import (
 
 
 class ParseError(Exception):
-    """A malformed formula. The only exception ``parse`` raises."""
+    """A malformed formula. The only exception ``parse`` raises.
+
+    ``code`` is the error LibreOffice Calc shows for it, read left to right: an unmatched ')' is
+    Err:508; two operands side by side (=1 2, =(2)3) Err:509; a binary operator where an operand is
+    expected (=*2, =1+*2) Err:510; the formula ending where an operand is expected Err:511 inside an
+    open '(' (=(1+, =SUM(1,) and Err:520 at top level (=1+, =-); a number literal out of the double
+    range (=1E400, =1E-400) Err:502. Anything else keeps #VALUE!."""
+
+    def __init__(self, message, code="#VALUE!"):
+        super().__init__(message)
+        self.code = code
 
 
 _CELL = r"(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)"
@@ -115,8 +125,9 @@ def tokenize(src):
             pass
         elif kind == "num":
             value = float(text)
-            if not math.isfinite(value):
-                raise ParseError("number out of range at %d" % pos)
+            mantissa = re.split("[eE]", text)[0]
+            if not math.isfinite(value) or (value == 0 and re.search("[1-9]", mantissa)):
+                raise ParseError("number out of range at %d" % pos, "Err:502")
             out.append(Token("num", value, pos))
         elif kind == "str":
             out.append(Token("str", text[1:-1].replace('""', '"'), pos))
@@ -139,6 +150,7 @@ class _Parser:
     def __init__(self, tokens):
         self.toks = tokens
         self.i = 0
+        self.depth = 0  # open '(' (groups and calls) around the current token
 
     @property
     def tok(self):
@@ -153,20 +165,48 @@ class _Parser:
         self.i += 1
         return t
 
-    def fail(self, what="unexpected"):
+    def fail(self, what="unexpected", code="#VALUE!"):
         t = self.tok
         shown = "end of formula" if t.kind == "end" else repr(t.value)
-        raise ParseError("%s %s at %d" % (what, shown, t.pos))
+        raise ParseError("%s %s at %d" % (what, shown, t.pos), code)
 
-    def expect(self, op):
-        if not self.is_op(op):
-            self.fail("expected %r, got" % op)
-        return self.take()
+    def need_operand(self, what="expected an operand, got"):
+        """The current token stands where an operand must: fail with Calc's code for it."""
+        t = self.tok
+        if t.kind == "end":
+            self.fail(what, "Err:511" if self.depth else "Err:520")
+        if t.kind == "op" and t.value == ")":
+            self.fail(what, "Err:511" if self.depth else "Err:508")
+        if t.kind == "op" and t.value in (",", ";"):
+            self.fail(what, "Err:509")
+        if t.kind == "op" and t.value == "%":
+            self.fail(what, "Err:520")
+        if t.kind == "op":
+            self.fail(what, "Err:510")
+        self.fail(what)
+
+    def after_operand(self, what="unexpected"):
+        """The current token follows a whole operand where it cannot: Calc's code for it."""
+        t = self.tok
+        if t.kind == "op" and t.value == ")":
+            self.fail(what, "Err:508")
+        if t.kind != "op" or t.value in ("(", ",", ";"):
+            self.fail(what, "Err:509")
+        self.fail(what)
+
+    def open(self):
+        if not self.is_op("("):
+            self.fail("expected '(', got")
+        self.take()
+        self.depth += 1
 
     def close(self):
         """A ')', or the end of the formula: Calc closes open parentheses there (=SUM(1,2 is 3)."""
         if self.tok.kind != "end":
-            self.expect(")")
+            if not self.is_op(")"):
+                self.after_operand("expected ')', got")
+            self.take()
+        self.depth -= 1
 
     def range_end(self, start):
         """After a reference, ':' and a second reference make a range, spaces allowed around ':'
@@ -179,6 +219,8 @@ class _Parser:
         t = self.tok
         end = t.value if t.kind == "ref" else None
         if not isinstance(end, Ref):
+            if t.kind in ("end", "op"):
+                self.need_operand("expected a reference after ':', got")
             self.fail("expected a reference after ':', got")
         if end.sheet is not None and (start.sheet is None or end.sheet.upper() != start.sheet.upper()):
             raise ParseError("a range ends on another sheet at %d" % t.pos)
@@ -263,16 +305,16 @@ class _Parser:
                 return Bool(name == "TRUE")
             return Name(name)
         if self.is_op("("):
-            self.take()
+            self.open()
             node = self.expr()
             self.close()
             return node
-        self.fail()
+        self.need_operand()
 
     def args(self):
-        self.expect("(")
-        if self.is_op(")"):
-            self.take()
+        self.open()
+        if self.is_op(")") or self.tok.kind == "end":
+            self.close()  # =SUM() and =SUM( are both the empty call
             return ()
         args = []
         while True:
@@ -282,6 +324,8 @@ class _Parser:
                 args.append(self.expr())
             if self.is_op(",", ";"):
                 self.take()
+                if self.tok.kind == "end":
+                    self.need_operand()  # =SUM(1, is Err:511
                 continue
             self.close()
             return tuple(args)
@@ -301,7 +345,7 @@ def parse(formula):
         p = _Parser(tokenize(body[1:]))
         node = p.expr()
         if p.tok.kind != "end":
-            p.fail()
+            p.after_operand()
         return node
     except RecursionError:
         raise ParseError("formula nested too deeply") from None

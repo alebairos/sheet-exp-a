@@ -7,7 +7,8 @@ LibreOffice Calc's operators, coercions and error propagation; the result is a
 
 Errors are ordinary values: they flow through operators (the leftmost operand
 error wins) and arrive at functions as arguments.  Nothing here raises for a
-spreadsheet error; a formula that does not parse evaluates to ``#VALUE!``.
+spreadsheet error; a formula that does not parse evaluates to Calc's code for it (``ParseError.code``:
+Err:508 to Err:520, Err:502, else ``#VALUE!``).
 
 Calling convention for functions registered with :func:`src.functions.register`:
 positional arguments; a reference or range argument arrives as a :class:`Range`,
@@ -29,7 +30,9 @@ fallback only when the value is an error (a-v1-eval-edges). As in Calc, a branch
 that is not taken is never read.
 """
 
+import inspect
 import math
+import re
 
 from src import parser as p
 from src.functions import registry
@@ -243,11 +246,35 @@ def _arg(a, book, sheet, pos):
     return BLANK if isinstance(a, p.Missing) else _eval(a, book, sheet, pos)
 
 
+# The functions Calc computes with no arguments at all (=SUM() is 0, =AVERAGE() #DIV/0!,
+# =CONCATENATE() ""); any other call with none is Calc's Err:511 (a missing variable). Run in
+# LibreOffice Calc 26.8.1.1 (plan a-v1-parse-fidelity's probe).
+_EMPTY_CALL_OK = frozenset({"SUM", "COUNT", "COUNTA", "PRODUCT", "AVERAGE", "CONCATENATE"})
+_MISSING_VARIABLE = Error("Err:511")
+_NO_OPERATOR = Error("Err:509")
+
+
+def _takes_arguments(fn):
+    """False for a function registered with no parameters at all, which a call with none suits."""
+    try:
+        return bool(inspect.signature(fn).parameters)
+    except (TypeError, ValueError):
+        return True
+
+
+def _is_cell_address(name):
+    m = re.fullmatch(r"([A-Z]{1,3})([0-9]+)", name)
+    return bool(m) and 1 <= p.letters_to_col(m.group(1)) <= p.nodes.MAX_COL and 1 <= int(m.group(2)) <= p.nodes.MAX_ROW
+
+
 def _call(node, book, sheet, pos=None):
     name = node.name.upper()
     fn = registry().get(name)
     if fn is None:
-        return NAME
+        # =A1(2): Calc reads a cell address before '(' as a reference beside a bracket, Err:509.
+        return _NO_OPERATOR if _is_cell_address(name) else NAME
+    if not node.args and name not in _EMPTY_CALL_OK and _takes_arguments(fn):
+        return _MISSING_VARIABLE
     eager = _LAZY.get(name, len(node.args))
     args = [_arg(a, book, sheet, pos) for a in node.args[:eager]]
     args += [_Unevaluated(a) for a in node.args[eager:]]
@@ -303,6 +330,6 @@ def evaluate(formula, book, sheet, cell=None):
     ``cell`` (its address, optional)."""
     try:
         tree = p.parse(formula)
-    except p.ParseError:
-        return VALUE
+    except p.ParseError as e:
+        return Error(e.code)
     return evaluate_node(tree, book, sheet, cell)

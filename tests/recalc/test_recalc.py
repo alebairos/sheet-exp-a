@@ -35,8 +35,9 @@ class Order(unittest.TestCase):
         self.assertEqual(out["sheets"]["S"], {"B2": 3, "A1": 1.5, "Z1": {"error": "#N/A"}, "T": "x"})
         self.assertEqual(book, before)
 
-    def test_a_formula_that_does_not_parse_is_value_error(self):
-        self.assertEqual(sheet({"A1": "=1+", "A2": "=A1+1"}), {"A1": {"error": "#VALUE!"}, "A2": {"error": "#VALUE!"}})
+    def test_a_formula_that_does_not_parse_is_calcs_error(self):
+        # =1+ is Err:520 in LibreOffice Calc, and the error flows to the cells that read it.
+        self.assertEqual(sheet({"A1": "=1+", "A2": "=A1+1"}), {"A1": {"error": "Err:520"}, "A2": {"error": "Err:520"}})
 
     def test_bad_input_is_an_empty_workbook(self):
         self.assertEqual(compute({}), {"sheets": {}})
