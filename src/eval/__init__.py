@@ -216,7 +216,7 @@ def _binary(op, left, right):
         return Text(a.value + b.value)
     if op in _COMPARE:
         c = compare(left, right)
-        # Calc compares two numbers within 2**-48 (relative) as equal: =0.1+0.2=0.3 is TRUE.
+        # Calc compares two near-equal numbers as equal (values.approx_equal): =0.1+0.2=0.3 is TRUE.
         if c != 0 and isinstance(left, Number) and isinstance(right, Number) and approx_equal(left.value, right.value):
             c = 0
         return c if isinstance(c, Error) else Bool(_COMPARE[op](c))

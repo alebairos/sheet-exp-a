@@ -272,21 +272,43 @@ def compare(a, b):
 
 
 # --- LibreOffice's approximate arithmetic (a-v1-decimal-noise) -------------
-# rtl::math as Calc's interpreter uses it for operators: two doubles within 2**-48 of each other
-# (relative) are equal, and adding near-opposites or subtracting near-equals gives exactly 0. So
-# =0.1+0.2=0.3 is TRUE and =(0.1+0.2)-0.3 is 0, while =(1+1E-14)-1 keeps its real difference.
+# rtl::math as Calc's interpreter uses it for operators. Two doubles are equal when they are within 2**-44
+# of each other (relative), are not both whole numbers up to 2**53-1 (nor their difference), and either lie
+# within 2**-48 or read the same to 15 significant digits. Adding near-opposites or subtracting near-equals
+# gives exactly 0. So =0.1+0.2=0.3 is TRUE and =(0.1+0.2)-0.3 is 0, =1.0000000000000049=1 is TRUE while
+# =1.000000000000005=1 is FALSE, and =1E15+1-1E15 stays 1. Fitted to LibreOffice Calc 26.8.1.1 runs.
 
 _E48 = 2.0 ** -48
+_E44 = 2.0 ** -44
+_MAX_INT = 2.0 ** 53 - 1
+
+
+def _whole(x):
+    """A whole number a double holds exactly, up to 2**53-1 (Calc's isRepresentableInteger)."""
+    return x <= _MAX_INT and x == math.floor(x)
+
+
+def _digits15(x):
+    """``x`` rounded to 15 significant digits, half away from zero, from its shortest decimal form."""
+    d = decimal.Decimal(repr(x))
+    return d.quantize(decimal.Decimal(1).scaleb(d.adjusted() - 14), rounding=decimal.ROUND_HALF_UP)
 
 
 def approx_equal(a, b):
-    """True when the doubles ``a`` and ``b`` are equal as Calc compares them (relative 2**-48)."""
+    """True when the doubles ``a`` and ``b`` are equal as Calc's operators compare them."""
     if a == b:
         return True
-    if a == 0.0 or b == 0.0 or not (math.isfinite(a) and math.isfinite(b)):
+    if a == 0.0 or b == 0.0:
         return False
     d = abs(a - b)
-    return d < abs(a) * _E48 and d < abs(b) * _E48
+    if not math.isfinite(d):
+        return False
+    a, b = abs(a), abs(b)
+    if d > a * _E44 or d > b * _E44:
+        return False
+    if _whole(d) and _whole(a) and _whole(b):
+        return False
+    return (d < a * _E48 and d < b * _E48) or _digits15(a) == _digits15(b)
 
 
 def approx_add(a, b):
