@@ -49,6 +49,7 @@ from src.values import (
     Number,
     Text,
     Value,
+    TEXT_TIE,
     approx_add,
     approx_equal,
     approx_sub,
@@ -196,7 +197,8 @@ def _concat_text(v):
 
 
 _COMPARE = {
-    "=": lambda c: c == 0, "<>": lambda c: c != 0,
+    # TEXT_TIE: different texts that sort equal (é and e + combining acute) are <= and >= but not =.
+    "=": lambda c: c == 0 and c is not TEXT_TIE, "<>": lambda c: c != 0 or c is TEXT_TIE,
     "<": lambda c: c < 0, ">": lambda c: c > 0,
     "<=": lambda c: c <= 0, ">=": lambda c: c >= 0,
 }
