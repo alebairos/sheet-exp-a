@@ -192,7 +192,8 @@ def to_number(v):
 
 def format_number(x):
     """A number as Calc turns it into text (&, CONCATENATE, LEN): an integer below 2**53 exactly; otherwise 15
-    significant digits rounded half away from zero, as a decimal from 1E-14 up to below 1E15 and else as
+    significant digits rounded half away from zero, as a decimal when the number itself is from 1E-14 up to
+    below 1E15 (999999999999999.5 is 1000000000000000, 9.999999999999995E-15 is 1E-014) and else as
     mantissa E sign and a 3-digit exponent (1E+021, 1E-020); no trailing zeros."""
     if not math.isfinite(x):
         return "#NUM!"
@@ -203,7 +204,7 @@ def format_number(x):
     d = decimal.Decimal(repr(x))
     q = d.quantize(decimal.Decimal(1).scaleb(d.adjusted() - 14), rounding=decimal.ROUND_HALF_UP)
     e = q.adjusted()
-    if -14 <= e < 15:
+    if -14 <= d.adjusted() < 15:  # Calc picks the form from the exponent before rounding
         t = format(q, "f")
         return t.rstrip("0").rstrip(".") if "." in t else t
     m = format(q.scaleb(-e), "f")
