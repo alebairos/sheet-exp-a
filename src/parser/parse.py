@@ -1,5 +1,6 @@
 """Tokenizer and recursive-descent parser in Calc's operator order."""
 
+import dataclasses
 import math
 import re
 
@@ -27,8 +28,9 @@ class ParseError(Exception):
 
 
 _CELL = r"(\$?)([A-Za-z]{1,3})(\$?)([0-9]+)"
-# A reference ends where an identifier could not go on; 'LOG10(' is a call, 'A1B' a name.
-_REF_END = r"(?![A-Za-z0-9_.(])"
+# A reference ends where an identifier could not go on; 'LOG10(' is a call, 'A1B' a name, and
+# 'S2!' a sheet name, so S2!A1:S2!A2 reads as two references and not as S2!A1:S2 then !A2.
+_REF_END = r"(?![A-Za-z0-9_.(!])"
 
 _TOKEN = re.compile(
     r"""
@@ -42,7 +44,7 @@ _TOKEN = re.compile(
       )
     | (?P<badsheet>(?:'(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!)
     | (?P<ident>[A-Za-z_][A-Za-z0-9_.]*)
-    | (?P<op><>|<=|>=|[-+*/^&=<>%(),;])
+    | (?P<op><>|<=|>=|[-+*/^&=<>%(),;:])
     """,
     re.VERBOSE | re.IGNORECASE,
 )
@@ -161,6 +163,28 @@ class _Parser:
             self.fail("expected %r, got" % op)
         return self.take()
 
+    def close(self):
+        """A ')', or the end of the formula: Calc closes open parentheses there (=SUM(1,2 is 3)."""
+        if self.tok.kind != "end":
+            self.expect(")")
+
+    def range_end(self, start):
+        """After a reference, ':' and a second reference make a range, spaces allowed around ':'
+        (A1 : A2). The second end may name the first one's sheet again (S2!A1:S2!A2)."""
+        if not self.is_op(":"):
+            return start
+        if not isinstance(start, Ref):
+            self.fail()
+        self.take()
+        t = self.tok
+        end = t.value if t.kind == "ref" else None
+        if not isinstance(end, Ref):
+            self.fail("expected a reference after ':', got")
+        if end.sheet is not None and (start.sheet is None or end.sheet.upper() != start.sheet.upper()):
+            raise ParseError("a range ends on another sheet at %d" % t.pos)
+        self.take()
+        return Range(start, dataclasses.replace(end, sheet=start.sheet))
+
     # Loosest first.
     def expr(self):
         return self.compare()
@@ -229,7 +253,7 @@ class _Parser:
             return Error(t.value)
         if t.kind == "ref":
             self.take()
-            return t.value
+            return self.range_end(t.value)
         if t.kind == "ident":
             self.take()
             name = t.value.upper()
@@ -241,7 +265,7 @@ class _Parser:
         if self.is_op("("):
             self.take()
             node = self.expr()
-            self.expect(")")
+            self.close()
             return node
         self.fail()
 
@@ -259,7 +283,7 @@ class _Parser:
             if self.is_op(",", ";"):
                 self.take()
                 continue
-            self.expect(")")
+            self.close()
             return tuple(args)
 
 
