@@ -92,7 +92,7 @@ class CompareTest(unittest.TestCase):
         self.assertEqual(compare(Number(1), Number(2)), -1)
         self.assertEqual(compare(Number(1), Text("1")), -1)
         self.assertEqual(compare(Text("1"), Number(1)), 1)
-        self.assertEqual(compare(Text("a"), Text("A")), 0)
+        self.assertEqual(compare(Text("a"), Text("A")), -1)  # Calc: case-sensitive, lower first
         self.assertEqual(compare(Text("B"), Text("a")), 1)
 
     def test_bools_are_numbers(self):

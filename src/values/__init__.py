@@ -9,10 +9,12 @@ import decimal
 import math
 import re
 
+from .text_rules import collation_key
+
 __all__ = [
     "Number", "Text", "Bool", "Blank", "BLANK", "Error", "ERROR_CODES",
     "DIV0", "VALUE", "REF", "NAME", "NA", "NUM",
-    "from_json", "to_json", "to_number", "to_text", "to_bool", "compare",
+    "from_json", "to_json", "to_number", "to_text", "to_bool", "compare", "TEXT_TIE",
     "is_error", "format_number", "approx_equal", "approx_add", "approx_sub",
 ]
 
@@ -249,6 +251,16 @@ def _sign(a, b):
     return (a > b) - (a < b)
 
 
+class _TextTie(int):
+    """compare()'s answer for different texts that sort equal: 0 for <= and >=, yet not = (Calc)."""
+
+    def __repr__(self):
+        return "TEXT_TIE"
+
+
+TEXT_TIE = _TextTie(0)
+
+
 def compare(a, b):
     """Compare two values as Calc's = <> < > <= >= do: -1, 0, 1 or an Error."""
     if isinstance(a, Error):
@@ -265,7 +277,11 @@ def compare(a, b):
     if ra != rb:
         return _sign(ra, rb)
     if ra == 1:
-        return _sign(a.value.casefold(), b.value.casefold())
+        if a.value == b.value:
+            return 0
+        # Calc sorts text by its collation (case-sensitive, accents after letters), but = and <> compare
+        # text exactly: two different strings that sort equal give TEXT_TIE, neither = nor < nor >.
+        return _sign(collation_key(a.value), collation_key(b.value)) or TEXT_TIE
     x = 1.0 if a.value is True else 0.0 if a.value is False else a.value
     y = 1.0 if b.value is True else 0.0 if b.value is False else b.value
     return _sign(x, y)
