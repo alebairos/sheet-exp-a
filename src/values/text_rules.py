@@ -1,58 +1,133 @@
 """Calc's text rules (LibreOffice defaults, en-US): how text sorts.
 
-``collation_key(s)``: the key = <> < > <= >= order text by: letters first (a..z, then þ), then accents
-(e < é < è < ê < ë < f), then case (lower before upper), as a new Calc document does (case-sensitive,
-locale collation). Control characters (tab) sort first, then punctuation, symbols and digits in Calc's
-order, then letters; other scripts come after Latin, by code point. Format characters (soft hyphen) are
-ignored, so two different strings can sort equal (é and e + combining acute): = and <> still compare
-text exactly, as Calc does. The order was taken from LibreOffice Calc 26.8.1.1 runs (plan a-v1-text-rules).
+``collation_key(s)``: the key = <> < > <= >= order text by, as a new Calc document does (case-sensitive,
+locale collation): first the base characters, then accents, then case and width. Each character becomes
+collation elements (primary, secondary, tertiary):
+
+- Primary: Calc's own order of base characters, probed from Calc (collation_data.ORDER: spaces, punctuation,
+  symbols, currency, digits, then the Latin letters a..z with the letters Calc sorts after each one, as
+  ı after i, ŋ after n, ə after e, ŧ after t, then þ; then Greek and Cyrillic). What the probe did not
+  cover follows rules: other punctuation, symbols and emoji sort just after the probed symbol of their
+  category nearest below them in code point; any script's decimal digit is that digit (٣ sorts equal to 3);
+  a numbered sign (❶, ➀) is its number; a Latin letter named "LATIN ... LETTER X ..." sorts just after x;
+  letters of other scripts sort after Cyrillic, by script in Calc's order of scripts (collation_data.SCRIPTS),
+  then by code point. Known to differ from Calc: a few rare blocks the probe did not cover (Latin
+  Extended-E such as ꬾ, Braille, playing cards, alchemical symbols) and Coptic letters in the Greek block.
+- Secondary: accents (e < é < è < ê < ë < f), from the decomposed form; ł đ ħ ø are l d h o with a stroke,
+  ð is d, ſ is s, æ œ ß are ae oe ss with a mark of their own.
+- Tertiary: lower case before upper case, then compatibility forms after their base (a < ａ < A < Ａ; ﬁ is
+  f i, ² is 2, Ⅻ is XII), from the character's compatibility decomposition.
+
+Control characters (tab) sort before everything; format characters (soft hyphen) are ignored, so two
+different strings can sort equal (é and e + combining acute): = and <> still compare text exactly.
 """
+import bisect
+import functools
 import unicodedata
+
+from .collation_data import ORDER, SCRIPTS, TIES
 
 __all__ = ["collation_key"]
 
-# Primary order of punctuation, symbols and digits as Calc sorts them, then the letters.
-_SYMBOLS = " _-,;:!¡?¿.·'\"«»()[]{}§@*/\\&#%`´^¯¨¸°©®+±÷×<=>¬|¦~¤¢$£¥€⁄"
-_PRIMARY = {c: i + 1 for i, c in enumerate(_SYMBOLS + "0123456789" + "abcdefghijklmnopqrstuvwxyzþ")}
+# Primary weights: (position, code point). A probed character has (its position in Calc's order, 0).
+_PRIMARY = {}
+for _i, _c in enumerate(ORDER):
+    _PRIMARY[_c] = _PRIMARY[ORDER[_i - 1]] if _c in TIES else (_i + 1, 0)
+_DIGITS = _PRIMARY["0"][0]  # unprobed symbols sort just before the digits
+_AFTER_LATIN = len(ORDER) + 1  # letters of other scripts: then by script, in Calc's order of scripts
+_SCRIPT = {w: i for i, w in enumerate(SCRIPTS)}
+_SYMBOL_CODES = {}  # general category -> code points of the probed symbols of that category
+for _c in sorted(ORDER):
+    if _PRIMARY[_c][0] < _DIGITS:
+        _SYMBOL_CODES.setdefault(unicodedata.category(_c), []).append(ord(_c))
+
 # Accent order after "no accent" (1): acute grave breve circumflex caron ring diaeresis
-# double-acute tilde dot-above cedilla ogonek macron.
-_ACCENT = {m: i + 2 for i, m in enumerate("̧̨́̀̆̂̌̊̈̋̃̇̄")}
-# Letters Calc sorts as other letters with a mark of their own (secondary weight).
-_STROKE, _LIG, _ETH, _SZ = 40, 41, 42, 43
-_SPECIAL = {"ø": ("o", _STROKE), "ð": ("d", _ETH), "æ": ("a", _LIG, "e"), "œ": ("o", _LIG, "e"), "ß": ("s", _SZ, "s")}
-# Variant forms: sort as their base, after it at the case level.
-_VARIANTS = {"ª": "a", "º": "o", "¹": "1", "²": "2", "³": "3", "½": "1⁄2", "¼": "1⁄4", "¾": "3⁄4", "µ": "μ",
-             " ": " "}
+# double-acute tilde dot-above cedilla ogonek macron; other marks after them.
+_ACCENT = {m: i + 2 for i, m in enumerate(
+    "\u0301\u0300\u0306\u0302\u030c\u030a\u0308\u030b\u0303\u0307\u0327\u0328\u0304")}
+_STROKE, _LIG, _ETH, _SZ, _LONG = 40, 41, 42, 43, 44
+# Letters Calc sorts as a base letter with a mark of their own (secondary), not as letters of their own.
+_SPECIAL = {"ø": ("o", _STROKE), "ł": ("l", _STROKE), "đ": ("d", _STROKE), "ħ": ("h", _STROKE),
+            "ð": ("d", _ETH), "ſ": ("s", _LONG), "æ": ("a", _LIG, "e"), "œ": ("o", _LIG, "e"), "ß": ("s", _SZ, "s")}
+# Tertiary weight of a compatibility form, by its decomposition tag (lower case 1; upper case adds 6
+# for the first five: a < ａ < A < Ａ).
+_TAG = {"": 1, "<wide>": 2, "<compat>": 3, "<font>": 4, "<circle>": 5, "<initial>": 13, "<medial>": 14,
+        "<final>": 15, "<isolated>": 16, "<noBreak>": 17, "<square>": 18, "<super>": 19, "<sub>": 20,
+        "<vertical>": 21, "<fraction>": 22, "<narrow>": 23, "<small>": 24}
 
 
-def _elements(s, variant=False):
-    """(primary, secondary, tertiary) per collation element; tertiary 1 lower, 2 upper, 3 a variant."""
+def _small_number(ch):
+    """A number sign of a small whole value (❶, ➀, ↅ): Calc sorts it as that number."""
+    if unicodedata.category(ch) in ("No", "Nl") and unicodedata.normalize("NFKD", ch) == ch:
+        v = unicodedata.numeric(ch, None)
+        if v is not None and v == int(v) and 0 <= v <= 20:
+            return str(int(v))
+    return None
+
+
+def _primary(ch):
+    """The primary weight of a base character (lower case, no compatibility decomposition)."""
+    p = _PRIMARY.get(ch)
+    if p:
+        return p
+    cat = unicodedata.category(ch)
+    if cat == "Nd":
+        return _PRIMARY[str(unicodedata.decimal(ch))]
+    if cat[0] in "PSZ" or cat == "Lm":  # just after the nearest probed symbol of its category below it
+        codes = _SYMBOL_CODES.get(cat, ())
+        i = bisect.bisect(codes, ord(ch))
+        return (_PRIMARY[chr(codes[i - 1])][0] if i else _DIGITS - 1, ord(ch))
+    name = unicodedata.name(ch, "")
+    if name.startswith("LATIN "):
+        # "LATIN SMALL LETTER L WITH MIDDLE TILDE", "LATIN LETTER SMALL CAPITAL A": just after that letter
+        letter = [w for w in name.split(" LETTER ", 1)[-1].split() if w not in ("SMALL", "CAPITAL")][:1]
+        if letter and len(letter[0]) == 1 and letter[0].lower() in _PRIMARY:
+            return (_PRIMARY[letter[0].lower()][0], ord(ch))
+        return (_PRIMARY["z"][0], ord(ch))
+    if cat[0] in "LN":
+        return (_AFTER_LATIN + _SCRIPT.get(name.split(" ")[0], len(SCRIPTS)), ord(ch))
+    return (_DIGITS - 1, ord(ch))
+
+
+def _elements(s, tag=""):
+    """(primary, secondary, tertiary) per collation element; primary None for an accent."""
     out = []
     for ch in s:
         cat = unicodedata.category(ch)
         if cat == "Cf":
             continue
         if cat == "Cc":
-            out.append((ord(ch) - 1000, 1, 1))  # before the space
+            out.append(((0, ord(ch)), 1, 1))  # before the space
             continue
-        if cat == "Mn":  # a combining accent: on the letter before it
-            out.append((0, _ACCENT.get(ch, 30 + ord(ch) % 1000), 1))
+        if cat.startswith("M"):  # a combining accent: on the letter before it
+            out.append((None, _ACCENT.get(ch, 30 + ord(ch) % 1000), 1))
             continue
-        if ch in _VARIANTS:
-            out += _elements(_VARIANTS[ch], True)
+        if ch in _PRIMARY:  # probed as it is (spacing accents such as ´ ¨ ¯ are symbols of their own)
+            out.append((_PRIMARY[ch], 1, _TAG.get(tag, 25)))
             continue
         low = ch.lower()
-        t = 3 if variant else 2 if ch != low else 1
-        if low in _SPECIAL:
-            out += [(0, p, 1) if isinstance(p, int) else (_PRIMARY[p], 1, t) for p in _SPECIAL[low]]
-            continue
         d = unicodedata.normalize("NFD", low)
-        out.append((_PRIMARY.get(d[0], 1000 + ord(d[0])), 1, t))  # other scripts: after Latin
-        out += [(0, _ACCENT.get(m, 30 + ord(m) % 1000), 1) for m in d[1:]]
+        base, accents = d[0], [(None, _ACCENT.get(m, 30 + ord(m) % 1000), 1) for m in d[1:]]
+        dec = unicodedata.decomposition(base)
+        if dec.startswith("<") and base not in _PRIMARY and base not in _SPECIAL:
+            # a compatibility form (ﬁ ² Ａ Ⅻ): its base, marked at the tertiary level
+            out += _elements(unicodedata.normalize("NFKD", ch), tag or dec.split(">")[0] + ">")
+            continue
+        number = _small_number(base)
+        if number is not None:
+            out += _elements(number, tag or "<circle>") + accents
+            continue
+        t = _TAG.get(tag, 25) + (6 if ch != low and _TAG.get(tag, 25) <= 5 else 0)
+        if base in _SPECIAL:
+            out += [(None, p, 1) if isinstance(p, int) else (_primary(p), 1, t) for p in _SPECIAL[base]] + accents
+            continue
+        out.append((_primary(base), 1, t))
+        out += accents
     return out
 
 
+@functools.lru_cache(maxsize=4096)
 def collation_key(s):
-    """Calc's sort key for text s: compare keys with < to order texts (letters, then accents, then case)."""
+    """Calc's sort key for text s: compare keys with < to order texts (base characters, then accents, then case)."""
     e = _elements(s)
-    return ([x[0] for x in e if x[0]], [x[1] for x in e], [x[2] for x in e])
+    return (tuple(x[0] for x in e if x[0] is not None), tuple(x[1] for x in e), tuple(x[2] for x in e))
