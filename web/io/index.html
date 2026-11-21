@@ -28,8 +28,8 @@
   <div id="grid" tabindex="0"></div>
   <script type="module">
     import { createController, download } from "./io.js";
-    import { createState, mount, select, inputText } from "../grid/grid.js";
-    import { mount as mountBar } from "../formula_bar/formula_bar.js";
+    import { createState, mount, select } from "../grid/grid.js";
+    import { mount as mountBar, barText } from "../formula_bar/formula_bar.js";
 
     // The one engine: serve.py answers POST /compute with ./engine's computed workbook.
     const compute = async (book) => {
@@ -46,13 +46,11 @@
       messageEl.className = /^Could not/.test(controller.state.message) ? "error" : "";
     };
 
-    // The grid edits a copy of the computed sheet. Each change, find the cells the user typed into
-    // and hand the controller only those, as typed; the grid's book never goes back to the controller.
-    const changedRefs = (a, b) => [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => a[k] !== b[k]);
+    // The grid edits a copy of the computed sheet; the grid's book never goes back to the controller.
+    // The grid reports each edit the user made (onEdit), as typed, and the page hands it to the controller.
     // One grid for the page's lifetime: redraws go through its setState, so its listeners are added
     // once and one keypress is one edit (mounting again on every redraw stacked listeners).
     let busy = Promise.resolve();
-    let shown = {};
     let grid = null;
     // The formula bar follows the grid's selection: the selected cell as typed (formulas kept) and,
     // when it computes to an error, the error's name. Enter in the bar edits that cell.
@@ -81,24 +79,25 @@
     });
     const onChange = (s) => {
       if (s.selected !== selected) { selected = s.selected; bar.update(barState()); }
-      const typed = s.book.sheets[s.sheet] || {};
-      const refs = changedRefs(shown, typed);
-      if (!refs.length) return;
+    };
+    // The in-cell editor opens with the cell as typed (the bar's text: formulas, '007 with its apostrophe),
+    // and only text the user changed is an edit: opening and leaving a cell changes nothing.
+    const textOf = (ref) => barText(controller.state.book, controller.state.sheet, ref);
+    const onEdit = (ref, text) => {
       busy = busy.then(async () => {
-        for (const ref of refs) await controller.edit(ref, inputText(typed[ref]));
+        await controller.edit(ref, text);
         showMessage();
         // Where the user is now, not where the edit was: they may have moved on while it computed.
-        show(grid ? grid.state.selected : s.selected);
+        show(grid ? grid.state.selected : ref);
       });
     };
     const show = (ref, reveal = false) => {
       selected = ref || "A1";
       const { computed, sheet } = controller.state;
-      shown = computed.sheets[sheet] || {};
       const state = select(createState(computed, sheet), selected);
       bar.update(barState());
       if (grid) grid.setState(state, { reveal });
-      else grid = mount(gridEl, state, { onChange });
+      else grid = mount(gridEl, state, { onChange, textOf, onEdit });
     };
 
     document.getElementById("open").addEventListener("change", async (e) => {
