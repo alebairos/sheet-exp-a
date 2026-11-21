@@ -9,7 +9,7 @@ import decimal
 import math
 import re
 
-from .text_rules import collation_key
+from .text_rules import collation_key, parse_number
 
 __all__ = [
     "Number", "Text", "Bool", "Blank", "BLANK", "Error", "ERROR_CODES",
@@ -169,11 +169,6 @@ def to_json(v):
 
 # --- coercion --------------------------------------------------------------
 
-# Calc's default "unambiguous" text-to-number conversion: a signed decimal with
-# an optional exponent, nothing around it.
-_NUMBER_TEXT = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
-
-
 def to_number(v):
     """The operand of an arithmetic operator: a Number or an Error."""
     if isinstance(v, Number):
@@ -185,10 +180,8 @@ def to_number(v):
     if isinstance(v, Error):
         return v
     if isinstance(v, Text):
-        if _NUMBER_TEXT.fullmatch(v.value):
-            x = float(v.value)
-            return Number(x) if math.isfinite(x) else NUM
-        return VALUE
+        x = parse_number(v.value)  # Calc's text-to-number rules (text_rules)
+        return VALUE if x is None else Number(x)
     return VALUE
 
 

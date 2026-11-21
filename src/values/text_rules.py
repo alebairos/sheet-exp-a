@@ -1,4 +1,4 @@
-"""Calc's text rules (LibreOffice defaults, en-US): how text sorts.
+"""Calc's text rules (LibreOffice defaults, en-US): how text sorts and how text reads as a number.
 
 ``collation_key(s)``: the key = <> < > <= >= order text by, as a new Calc document does (case-sensitive,
 locale collation): first the base characters, then accents, then case and width. Each character becomes
@@ -20,14 +20,22 @@ collation elements (primary, secondary, tertiary):
 
 Control characters (tab) sort before everything; format characters (soft hyphen) are ignored, so two
 different strings can sort equal (é and e + combining acute): = and <> still compare text exactly.
+
+``parse_number(s)``: the number Calc reads from text in arithmetic (and in every function that reads a number),
+or None. Spaces (U+0020 and no-break) around and between the parts; one number (ASCII digits, ',' grouping by
+threes, '.', an exponent); at most one sign, before or after; one '$' before or after; '(' ')' around it for a
+negative, with no sign; one '%' at the end; no '$' with '%'; no '$' or '%' with an exponent; TRUE and FALSE in
+any case (spaces only around them). A number beyond the largest double gives the largest double, without its
+sign. Text Calc reads as a date, time or fraction ("1/2", "1 1/2") is not read here: dates are out of scope.
 """
 import bisect
 import functools
+import re
 import unicodedata
 
 from .collation_data import ORDER, SCRIPTS, TIES
 
-__all__ = ["collation_key"]
+__all__ = ["collation_key", "parse_number"]
 
 # Primary weights: (position, code point). A probed character has (its position in Calc's order, 0).
 _PRIMARY = {}
@@ -131,3 +139,52 @@ def collation_key(s):
     """Calc's sort key for text s: compare keys with < to order texts (base characters, then accents, then case)."""
     e = _elements(s)
     return (tuple(x[0] for x in e if x[0] is not None), tuple(x[1] for x in e), tuple(x[2] for x in e))
+
+
+# One part of a number text: the number itself (grouped by threes or not, with an optional exponent) or a sign.
+_TOKEN = re.compile(r" *(?:(?P<num>[0-9]{1,3}(?:,[0-9]{3})+(?:\.[0-9]*)?|[0-9]+(?:\.[0-9]*)?|\.[0-9]+)"
+                    r"(?: *[eE] *(?P<exp>[-+]?[0-9]+))?|(?P<sym>[-+$()%]))")
+# Calc reads a number beyond the largest double as its largest number (it shows 1.79769313486232E+308).
+# Here it is the largest double that still has 15 significant digits: ./engine prints numbers rounded to
+# 15 digits, and 1.7976931348623157E+308 rounds up past the largest double (src/cli.py's _reported crashes on
+# it, also for a typed =1.7976931348623157E308 on main). 1.79769313486231E+308 is 3e-15 below Calc's value.
+_LARGEST = 1.79769313486231e308
+
+
+def parse_number(s):
+    """The number Calc reads from text s, or None when Calc gives #VALUE! (see the module's docstring)."""
+    b = s.strip(" ")
+    if b.upper() in ("TRUE", "FALSE"):
+        return 1.0 if b.upper() == "TRUE" else 0.0
+    t = s.replace("\u00a0", " ").strip(" ")  # a no-break space separates parts like a space
+    toks, pos, num = [], 0, None
+    while pos < len(t):
+        m = _TOKEN.match(t, pos)
+        if not m or m.end() == pos:
+            return None
+        pos = m.end()
+        if m["num"] is not None:
+            if num is not None:
+                return None
+            num = m
+            toks.append("N")
+        else:
+            toks.append(m["sym"])
+    if num is None:
+        return None
+    if any(toks.count(c) > 1 for c in "$%()") or toks.count("+") + toks.count("-") > 1:
+        return None
+    if "%" in toks and (toks[-1] != "%" or "$" in toks):
+        return None
+    if num["exp"] and ("%" in toks or "$" in toks):
+        return None
+    n = toks.index("N")
+    if "(" in toks or ")" in toks:
+        if "(" not in toks[:n] or ")" not in toks[n:] or "+" in toks or "-" in toks:
+            return None
+    x = float(num["num"].replace(",", "") + ("e" + num["exp"] if num["exp"] else ""))
+    if x > _LARGEST:
+        return _LARGEST  # Calc gives its largest number, without the sign (see _LARGEST)
+    if "-" in toks or "(" in toks:
+        x = -x
+    return x / 100 if "%" in toks else x
