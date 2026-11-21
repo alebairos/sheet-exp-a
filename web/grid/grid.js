@@ -195,7 +195,12 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
     editing = null;
     resize();
     const f = fit();
-    space.innerHTML = renderHTML(s, { rows: f.rows + 1, cols: f.cols + 1, top, left });
+    // The drawn window has one row and column more than fit, partly shown at the far edges. It sits in a
+    // sticky view the size of the box, clipped: a sticky element taller or wider than the box is pushed back
+    // at the end of the scroll range, which would lift the column headers (or the row headers) out of view.
+    const h = container.clientHeight, w = container.clientWidth;
+    const box = h > 0 && w > 0 ? ` style="width:${w}px;height:${h}px"` : "";
+    space.innerHTML = `<div class="grid-view"${box}>` + renderHTML(s, { rows: f.rows + 1, cols: f.cols + 1, top, left }) + "</div>";
   };
   // Scroll so the selected cell is wholly in view.
   const follow = () => {
