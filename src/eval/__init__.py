@@ -46,6 +46,9 @@ from src.values import (
     Number,
     Text,
     Value,
+    approx_add,
+    approx_equal,
+    approx_sub,
     compare,
     from_json,
     to_number,
@@ -172,9 +175,9 @@ def _power(a, b):
 
 def _arith(op, a, b):
     if op == "+":
-        return _num(a + b)
+        return _num(approx_add(a, b))
     if op == "-":
-        return _num(a - b)
+        return _num(approx_sub(a, b))
     if op == "*":
         return _num(a * b)
     if op == "/":
@@ -213,6 +216,9 @@ def _binary(op, left, right):
         return Text(a.value + b.value)
     if op in _COMPARE:
         c = compare(left, right)
+        # Calc compares two near-equal numbers as equal (values.approx_equal): =0.1+0.2=0.3 is TRUE.
+        if c != 0 and isinstance(left, Number) and isinstance(right, Number) and approx_equal(left.value, right.value):
+            c = 0
         return c if isinstance(c, Error) else Bool(_COMPARE[op](c))
     return VALUE
 
