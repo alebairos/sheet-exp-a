@@ -120,6 +120,15 @@ class MalformedTest(unittest.TestCase):
         for f, code in [("=1+", "Err:520"), ("=(", "Err:511"), ("=SUM(1,", "Err:511")]:
             self.assertEqual(ev(f), E(code), f)
 
+    def test_separator_after_an_operator_is_a_missing_variable(self):
+        # LibreOffice Calc 26.8 (the a-v1-parse-fidelity reviewer's UNO run): a ',' right after an
+        # operator is Err:511; one that opens the expression is Err:509.
+        for f in ["=1+,", "=1+,2", "=1*,", "=1&,", "=-,", "=(1+,", "=SUM(1+,2)", "=SUM(-,1)", "=SUM(1,2+,3)",
+                  "=IF(1>,2,3)"]:
+            self.assertEqual(ev(f), E("Err:511"), f)
+        for f in ["=,1", "=(,1)"]:
+            self.assertEqual(ev(f), E("Err:509"), f)
+
     def test_missing_final_parenthesis_is_closed_as_in_calc(self):
         self.assertEqual(ev("=SUM(1"), 1)
         self.assertEqual(ev("=(1+2"), 3)

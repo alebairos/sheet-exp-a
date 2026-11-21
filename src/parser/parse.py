@@ -178,7 +178,11 @@ class _Parser:
         if t.kind == "op" and t.value == ")":
             self.fail(what, "Err:511" if self.depth else "Err:508")
         if t.kind == "op" and t.value in (",", ";"):
-            self.fail(what, "Err:509")
+            # After an operator (=1+,2, =SUM(-,1)) the operand is missing, Err:511; a separator that
+            # opens the expression (=,1, =(,1)) stands beside nothing, Err:509.
+            before = self.toks[self.i - 1] if self.i else None
+            after_op = before is not None and before.kind == "op" and before.value not in ("(", ",", ";")
+            self.fail(what, "Err:511" if after_op else "Err:509")
         if t.kind == "op" and t.value == "%":
             self.fail(what, "Err:520")
         if t.kind == "op":
