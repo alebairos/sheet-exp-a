@@ -34,11 +34,22 @@ def _number(text):
     return x
 
 
+def _integer(text):
+    """A JSON integer, refused like 1e400 when no spreadsheet number can hold it."""
+    try:
+        n = int(text)
+        float(n)
+    except (OverflowError, ValueError):
+        shown = text if len(text) <= 20 else text[:12] + f"... ({len(text)} digits)"
+        raise BadInput(f"the input is not valid JSON: {shown} is too large for a number") from None
+    return n
+
+
 def _parse(text):
     if not text.strip():
         raise BadInput("the input is empty; expected a workbook such as {\"sheets\": {\"Sheet1\": {}}}")
     try:
-        return json.loads(text, parse_constant=_no_constant, parse_float=_number)
+        return json.loads(text, parse_constant=_no_constant, parse_float=_number, parse_int=_integer)
     except json.JSONDecodeError as e:
         raise BadInput(f"the input is not valid JSON: {e.msg} at line {e.lineno} column {e.colno}") from None
     except RecursionError:
