@@ -13,7 +13,7 @@ __all__ = [
     "Number", "Text", "Bool", "Blank", "BLANK", "Error", "ERROR_CODES",
     "DIV0", "VALUE", "REF", "NAME", "NA", "NUM",
     "from_json", "to_json", "to_number", "to_text", "to_bool", "compare",
-    "is_error", "format_number",
+    "is_error", "format_number", "approx_equal", "approx_add", "approx_sub",
 ]
 
 ERROR_CODES = ("#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#N/A", "#NUM!")
@@ -269,3 +269,35 @@ def compare(a, b):
     x = 1.0 if a.value is True else 0.0 if a.value is False else a.value
     y = 1.0 if b.value is True else 0.0 if b.value is False else b.value
     return _sign(x, y)
+
+
+# --- LibreOffice's approximate arithmetic (a-v1-decimal-noise) -------------
+# rtl::math as Calc's interpreter uses it for operators: two doubles within 2**-48 of each other
+# (relative) are equal, and adding near-opposites or subtracting near-equals gives exactly 0. So
+# =0.1+0.2=0.3 is TRUE and =(0.1+0.2)-0.3 is 0, while =(1+1E-14)-1 keeps its real difference.
+
+_E48 = 2.0 ** -48
+
+
+def approx_equal(a, b):
+    """True when the doubles ``a`` and ``b`` are equal as Calc compares them (relative 2**-48)."""
+    if a == b:
+        return True
+    if a == 0.0 or b == 0.0 or not (math.isfinite(a) and math.isfinite(b)):
+        return False
+    d = abs(a - b)
+    return d < abs(a) * _E48 and d < abs(b) * _E48
+
+
+def approx_add(a, b):
+    """a + b, exactly 0 when they are near-opposites."""
+    if ((a < 0.0 < b) or (b < 0.0 < a)) and approx_equal(a, -b):
+        return 0.0
+    return a + b
+
+
+def approx_sub(a, b):
+    """a - b, exactly 0 when they are near-equal numbers of the same sign."""
+    if ((a < 0.0 and b < 0.0) or (a > 0.0 and b > 0.0)) and approx_equal(a, b):
+        return 0.0
+    return a - b

@@ -149,10 +149,21 @@ def cell_value(book, ref):
     return cells.get(m.group(1).upper() + m.group(2), None)
 
 
+def _reported(x):
+    """A float as Calc reports it: 15 significant digits, so =0.1+0.2 prints 0.3 and the budget's
+    1200-850.5-384.02 prints -34.52, not binary noise; integral results print as integers, as
+    to_json writes them. Only the output is rounded; computing keeps full doubles, as Calc does."""
+    r = float(f"{x:.15g}")
+    if r == int(r) and abs(r) < 2 ** 53:
+        return int(r)
+    return r
+
+
 def _strict(v):
-    """`v` with any non-finite number (never valid JSON) as Calc's #NUM!."""
-    if isinstance(v, float) and not math.isfinite(v):
-        return {"error": "#NUM!"}
+    """`v` as printed: any non-finite number (never valid JSON) as Calc's #NUM!, every other float to
+    15 significant digits."""
+    if isinstance(v, float):
+        return _reported(v) if math.isfinite(v) else {"error": "#NUM!"}
     if isinstance(v, dict):
         return {k: _strict(x) for k, x in v.items()}
     if isinstance(v, list):
