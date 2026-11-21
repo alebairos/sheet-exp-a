@@ -101,15 +101,31 @@ export function edit(state, ref, text) {
   return { ...state, book: { ...state.book, sheets: { ...state.book.sheets, [state.sheet]: cells } } };
 }
 
-/** The grid as an HTML table; every cell carries data-ref, the selected one class "selected". */
-export function renderHTML(state, { rows = 20, cols = 8 } = {}) {
+/**
+ * How far the sheet reaches, in rows and columns: its used cells and the selection plus a margin
+ * (10 rows, 2 columns), never under `rows` x `cols`. The scroll box is this big.
+ */
+export function extent(state, { rows = 20, cols = 8, margin = 10 } = {}) {
+  let r = 0, c = 0;
+  for (const ref of [...Object.keys(cellsOf(state)), state.selected]) {
+    const p = parseRef(ref);
+    if (p) { r = Math.max(r, p.row); c = Math.max(c, p.col + 1); }
+  }
+  return { rows: Math.max(rows, r + margin), cols: Math.max(cols, c + 2) };
+}
+
+/**
+ * The grid as an HTML table: `rows` x `cols` cells from row `top` (1-based) and column index `left`
+ * (0-based), with their headers. Every cell carries data-ref, the selected one class "selected".
+ */
+export function renderHTML(state, { rows = 20, cols = 8, top = 1, left = 0 } = {}) {
   const cells = cellsOf(state);
   const out = ['<table class="grid"><thead><tr><th class="corner"></th>'];
-  for (let c = 0; c < cols; c++) out.push(`<th class="col">${colName(c)}</th>`);
+  for (let c = left; c < left + cols; c++) out.push(`<th class="col">${colName(c)}</th>`);
   out.push("</tr></thead><tbody>");
-  for (let r = 1; r <= rows; r++) {
+  for (let r = top; r < top + rows; r++) {
     out.push(`<tr><th class="row">${r}</th>`);
-    for (let c = 0; c < cols; c++) {
+    for (let c = left; c < left + cols; c++) {
       const ref = colName(c) + r;
       const v = cells[ref];
       const cls = [];
@@ -126,32 +142,95 @@ export function renderHTML(state, { rows = 20, cols = 8 } = {}) {
 }
 
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+// One row and one column of scrolling, in pixels of the scroll box. The table itself stays put
+// (sticky) and is redrawn for the rows and columns the scroll position points at.
+const STEP_Y = 22, STEP_X = 88;
 
 /**
- * Draws the grid into `container` and wires it: click selects; double-click, Enter, F2 or
- * typing edits; Enter commits, Escape cancels; arrows move. onChange(state) runs on every
- * selection and edit. Returns {state, setState(state), destroy()}.
+ * Draws the grid into `container` and wires it. The container is a scroll box as big as the sheet
+ * (extent()); only the rows and columns in view are drawn, with their headers, and a scroll redraws
+ * them. Click selects; double-click, Enter, F2 or typing edits; Enter commits, Escape cancels; the
+ * arrows and PageDown/PageUp move, and the view follows the selection. onChange(state) runs on
+ * every selection and edit. `rows` x `cols` is the least the sheet shows. Returns
+ * {state, setState(state, {reveal}), destroy()}; setState scrolls to the selection when it moved
+ * or when `reveal` is set.
  */
 export function mount(container, state, { rows = 20, cols = 8, onChange = () => {} } = {}) {
   let s = state;
   let editing = null;
+  let top = 1, left = 0; // the first row and column index drawn
   const doc = container.ownerDocument;
-  const tdOf = (ref) => container.querySelector(`td[data-ref="${ref}"]`);
+  const win = doc.defaultView;
+  container.classList.add("grid-scroll");
+  const space = doc.createElement("div");
+  space.className = "grid-space";
+  container.replaceChildren(space);
+  const tdOf = (ref) => space.querySelector(`td[data-ref="${ref}"]`);
+
+  // Rows and columns wholly inside the box, from the sizes the browser drew (fonts differ).
+  let size = { head: 24, side: 48, row: STEP_Y, col: STEP_X };
+  const measure = () => {
+    const th = space.querySelector("tbody th.row"), td = space.querySelector("tbody td");
+    const head = space.querySelector("thead tr");
+    if (th && td && head) {
+      size = { head: head.getBoundingClientRect().height, side: th.getBoundingClientRect().width,
+               row: th.getBoundingClientRect().height || STEP_Y, col: td.getBoundingClientRect().width || STEP_X };
+    }
+  };
+  const fit = () => {
+    const h = Math.min(container.clientHeight || 0, win ? win.innerHeight : Infinity);
+    const w = Math.min(container.clientWidth || 0, win ? win.innerWidth : Infinity);
+    return {
+      rows: Math.max(1, Math.floor((h - size.head) / size.row) || rows),
+      cols: Math.max(1, Math.floor((w - size.side) / size.col) || cols),
+    };
+  };
+  const resize = () => {
+    const ext = extent(s, { rows, cols });
+    // One row and column more than the sheet, so the drawn window always fits inside the space.
+    space.style.height = (ext.rows + 1) * STEP_Y + size.head + "px";
+    space.style.width = (ext.cols + 1) * STEP_X + size.side + "px";
+  };
   const draw = () => {
     editing = null;
-    container.innerHTML = renderHTML(s, { rows, cols });
+    resize();
+    const f = fit();
+    space.innerHTML = renderHTML(s, { rows: f.rows + 1, cols: f.cols + 1, top, left });
+  };
+  // Scroll so the selected cell is wholly in view.
+  const follow = () => {
+    const p = parseRef(s.selected);
+    if (!p) return;
+    const f = fit();
+    if (p.row < top) top = p.row;
+    else if (p.row >= top + f.rows) top = p.row - f.rows + 1;
+    if (p.col < left) left = p.col;
+    else if (p.col >= left + f.cols) left = p.col - f.cols + 1;
+    resize();
+    container.scrollTop = (top - 1) * STEP_Y;
+    container.scrollLeft = left * STEP_X;
+  };
+  const show = (reveal) => {
+    if (reveal) follow();
+    draw();
+    measure();
   };
   const update = (next) => {
     s = next;
-    draw();
+    show(true);
     onChange(s);
   };
-  const inside = (ref) => {
-    const p = parseRef(ref);
-    return p && p.col < cols && p.row <= rows;
+  const onScroll = () => {
+    const t = 1 + Math.floor(container.scrollTop / STEP_Y), l = Math.floor(container.scrollLeft / STEP_X);
+    if (t !== top || l !== left) {
+      top = t;
+      left = l;
+      if (!editing) draw();
+    }
   };
 
   const startEdit = (ref, initial) => {
+    if (!tdOf(ref)) show(true);
     const td = tdOf(ref);
     if (!td) return;
     const input = doc.createElement("input");
@@ -165,8 +244,7 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
       e.stopPropagation();
       if (e.key === "Enter") {
         e.preventDefault();
-        const next = edit(s, ref, input.value);
-        update(inside(move(next, 0, 1).selected) ? move(next, 0, 1) : next);
+        update(move(edit(s, ref, input.value), 0, 1));
         container.focus();
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -193,8 +271,14 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
   const onKey = (e) => {
     if (editing) return;
     if (ARROWS[e.key]) {
-      const next = move(s, ...ARROWS[e.key]);
-      if (inside(next.selected)) update(next);
+      update(move(s, ...ARROWS[e.key]));
+      e.preventDefault();
+    } else if (e.key === "PageDown" || e.key === "PageUp") {
+      // A screen at a time: the view and the selection move together, as in Calc.
+      const n = fit().rows;
+      const d = e.key === "PageDown" ? n : -n;
+      top = Math.max(1, top + d);
+      update(move(s, 0, d));
       e.preventDefault();
     } else if (e.key === "Enter" || e.key === "F2") {
       startEdit(s.selected);
@@ -207,19 +291,31 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
       e.preventDefault();
     }
   };
+  const onResize = () => { if (!editing) show(false); };
 
   container.tabIndex = 0;
   container.addEventListener("click", onClick);
   container.addEventListener("dblclick", onDblClick);
   container.addEventListener("keydown", onKey);
-  draw();
+  container.addEventListener("scroll", onScroll);
+  const observer = win && win.ResizeObserver ? new win.ResizeObserver(onResize) : null;
+  if (observer) observer.observe(container);
+  show(false);
+  show(false); // again with the sizes the browser drew
   return {
     get state() { return s; },
-    setState(next) { s = next; draw(); },
+    setState(next, { reveal = false } = {}) {
+      const moved = next.selected !== s.selected || next.sheet !== s.sheet;
+      s = next;
+      show(reveal || moved);
+    },
     destroy() {
       container.removeEventListener("click", onClick);
       container.removeEventListener("dblclick", onDblClick);
       container.removeEventListener("keydown", onKey);
+      container.removeEventListener("scroll", onScroll);
+      if (observer) observer.disconnect();
+      container.classList.remove("grid-scroll");
       container.innerHTML = "";
     },
   };

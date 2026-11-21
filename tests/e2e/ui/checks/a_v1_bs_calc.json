@@ -1,0 +1,1 @@
+{"source": "LibreOffice Calc 26.8.1.1 headless, by a_v1_bs_probe.py on big.csv as a_v1_bs_page.mjs builds it", "csv": {"L2001": "200111", "B2001": "200101", "A2": "200"}, "formulas": {"M1": "=SUM(B2:B2001)", "M2001": "=B2001*2"}, "before": {"M1": "200302000", "M2001": "400202"}, "edit": {"B2001": "5"}, "after": {"M1": "200101904", "M2001": "10"}}
