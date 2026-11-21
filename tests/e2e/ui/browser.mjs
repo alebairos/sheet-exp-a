@@ -1,7 +1,7 @@
 // Headless Chrome/Chromium for the product's browser tests, Node's standard library only: the app as
 // web/io/serve.py serves it, the browser driven over the DevTools protocol on a pipe (--remote-debugging-pipe).
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import net from "node:net";
@@ -35,11 +35,12 @@ export async function serve(root) {
   return { url: `http://127.0.0.1:${port}`, close: () => p.kill() };
 }
 
-// Starts the browser headless and attaches to its page: send(method, params) -> result, on(event, fn), close().
+// Starts the browser headless and attaches to its page: send(method, params) -> result, on(event, fn), close(),
+// targetId (the attached page's).
 export async function launch(browser) {
   const profile = mkdtempSync(join(tmpdir(), "e2e-ui-profile-"));
   const proc = spawn(browser, ["--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
-    "--no-first-run", "--remote-debugging-pipe", `--user-data-dir=${profile}`, "--window-size=1200,900", "about:blank"],
+    "--no-first-run", "--disable-extensions", "--remote-debugging-pipe", `--user-data-dir=${profile}`, "--window-size=1200,900", "about:blank"],
   { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
   const toBrowser = proc.stdio[3], fromBrowser = proc.stdio[4];
   let id = 0, buf = "";
@@ -69,10 +70,29 @@ export async function launch(browser) {
     if (!pages.length) await sleep(100);
   }
   if (!pages.length) { proc.kill(); throw new Error("the browser opened no page"); }
-  const { sessionId } = await call("Target.attachToTarget", { targetId: pages[0].targetId, flatten: true });
+  const targetId = pages[0].targetId;
+  const { sessionId } = await call("Target.attachToTarget", { targetId, flatten: true });
   return {
-    send: (method, params) => call(method, params, method.startsWith("Browser.") ? undefined : sessionId),
+    targetId,
+    // Browser.* and Target.* go to the browser itself, everything else to the attached page.
+    send: (method, params) => call(method, params, /^(Browser|Target)\./.test(method) ? undefined : sessionId),
     on: (ev, fn) => handlers.push([ev, fn]),
-    close: () => proc.kill(),
+    // Stops the browser, then removes its profile directory: best effort, never throws and never hangs.
+    // Chromium's helper processes can still be writing there when the main process exits, so the removal
+    // retries and a directory that will not go is left behind rather than failing a test that passed.
+    close: () => new Promise((ok) => {
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}
+        ok();
+      };
+      const timer = setTimeout(done, 5000);
+      if (proc.exitCode !== null || proc.signalCode !== null) return done();
+      proc.once("exit", done);
+      try { proc.kill(); } catch { done(); }
+    }),
   };
 }
