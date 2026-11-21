@@ -151,6 +151,13 @@ class _Parser:
         self.toks = tokens
         self.i = 0
         self.depth = 0  # open '(' (groups and calls) around the current token
+        # A code Calc gives only when the whole formula parses (a list in a group, =(2,3), is Err:509):
+        # any malformed part read later wins (=(2,3)+ is Err:520, =(1,2)) Err:508).
+        self.deferred = None
+
+    def defer(self, code):
+        if self.deferred is None:
+            self.deferred = code
 
     @property
     def tok(self):
@@ -220,15 +227,31 @@ class _Parser:
         if not isinstance(start, Ref):
             self.fail()
         self.take()
+        while self.is_op("+") and self.toks[self.i + 1].kind != "end":
+            self.take()  # =SUM(A1:+A2) is 3 in Calc: a plus sign there changes nothing
         t = self.tok
-        end = t.value if t.kind == "ref" else None
-        if not isinstance(end, Ref):
-            if t.kind in ("end", "op"):
+        if t.kind == "ref" and isinstance(t.value, Ref):
+            end = t.value
+            self.take()
+        else:
+            # Calc reads ':' as an operator and goes on reading its operand: a sign there is Err:520
+            # (=A1:-A2, =A1:+), a missing operand the usual code (=A1: 520, =SUM(A1: 511, =A1:(1+ 511).
+            if t.kind == "op" and t.value in ("+", "-"):
+                self.fail("a sign after ':' at", "Err:520")
+            if t.kind == "end" or (t.kind == "op" and t.value != "("):
                 self.need_operand("expected a reference after ':', got")
-            self.fail("expected a reference after ':', got")
+            # A reference in brackets still ends the range (=SUM(A1:(A2)) is 3); any other operand
+            # parses and gives Calc's Err:502 (=A1:2, =A1:(2,3)).
+            before = self.deferred
+            end = self.primary()
+            if isinstance(end, Name) and self.deferred == before:
+                return end  # =A1:B is #NAME?, as the unknown name B
+            if not isinstance(end, Ref) or self.deferred != before:
+                self.deferred = before
+                self.defer("Err:502")
+                return start
         if end.sheet is not None and (start.sheet is None or end.sheet.upper() != start.sheet.upper()):
             raise ParseError("a range ends on another sheet at %d" % t.pos)
-        self.take()
         return Range(start, dataclasses.replace(end, sheet=start.sheet))
 
     # Loosest first.
@@ -309,9 +332,21 @@ class _Parser:
                 return Bool(name == "TRUE")
             return Name(name)
         if self.is_op("("):
+            # A group. Calc reads ',' or ';' in it as a list separator: the list is Err:509 once the
+            # formula parses (=(2,3), =(,1)), and the formula ending after one is Err:511 (=(2, =(,).
             self.open()
-            node = self.expr()
+            node = Missing() if self.is_op(",", ";") else self.expr()
+            listed = False
+            while self.is_op(",", ";"):
+                self.take()
+                listed = True
+                if self.tok.kind == "end":
+                    self.need_operand()
+                if not self.is_op(",", ";", ")"):
+                    self.expr()
             self.close()
+            if listed:
+                self.defer("Err:509")
             return node
         self.need_operand()
 
@@ -350,6 +385,8 @@ def parse(formula):
         node = p.expr()
         if p.tok.kind != "end":
             p.after_operand()
+        if p.deferred is not None:
+            raise ParseError("Calc gives %s for this formula" % p.deferred, p.deferred)
         return node
     except RecursionError:
         raise ParseError("formula nested too deeply") from None

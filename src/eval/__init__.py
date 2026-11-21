@@ -247,9 +247,9 @@ def _arg(a, book, sheet, pos):
 
 
 # The functions Calc computes with no arguments at all (=SUM() is 0, =AVERAGE() #DIV/0!,
-# =CONCATENATE() ""); any other call with none is Calc's Err:511 (a missing variable). Run in
+# =STDEV() #DIV/0!, =CONCATENATE() ""); any other call with none is Calc's Err:511 (a missing variable). Run in
 # LibreOffice Calc 26.8.1.1 (plan a-v1-parse-fidelity's probe).
-_EMPTY_CALL_OK = frozenset({"SUM", "COUNT", "COUNTA", "PRODUCT", "AVERAGE", "CONCATENATE"})
+_EMPTY_CALL_OK = frozenset({"SUM", "COUNT", "COUNTA", "PRODUCT", "AVERAGE", "STDEV", "CONCATENATE"})
 _MISSING_VARIABLE = Error("Err:511")
 _NO_OPERATOR = Error("Err:509")
 

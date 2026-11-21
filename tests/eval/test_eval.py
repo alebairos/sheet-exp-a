@@ -129,6 +129,40 @@ class MalformedTest(unittest.TestCase):
         for f in ["=,1", "=(,1)"]:
             self.assertEqual(ev(f), E("Err:509"), f)
 
+    def test_a_list_in_a_group_is_calcs_code(self):
+        # LibreOffice Calc 26.8.1.1 over UNO (attempt 3's probe): inside a bracket group ',' and ';'
+        # separate a list. Ending after one, where an operand is expected, is Err:511; a whole list is
+        # Err:509, but only when nothing later is malformed (that later code wins).
+        for f in ["=(2,", "=(2;", "=(2,,", "=((2,", "=SUM((2,", "=SUM(1,(2,", "=1+(2,", "=IF((1,", "=(,",
+                  "=SUM((2,,", "=(1+2,", "=(A1,", "=((2),", "=(2,(", "=(2,-", "=(2,+", "=((1,2),",
+                  "=SUM((2,3),", "=SUM((2,3)+", "=(2,3)+("]:
+            self.assertEqual(ev(f), E("Err:511"), f)
+        for f in ["=(2,3)", "=(2,)", "=(1,2", "=(2,3", "=SUM((2,3))", "=SUM(1,(2,3)", "=(2,,3", "=(,)",
+                  "=(2,3)4", "=(2,3)+1", "=1+(2,3)", "=-(2,3)", "=((1,2)"]:
+            self.assertEqual(ev(f), E("Err:509"), f)
+        for f, code in [("=(2,3)+", "Err:520"), ("=(2,)+", "Err:520"), ("=(2,3)*/2", "Err:510"),
+                        ("=(2,*3)", "Err:510"), ("=(1,2))", "Err:508")]:
+            self.assertEqual(ev(f), E(code), f)
+
+    def test_what_follows_a_range_colon(self):
+        # LibreOffice Calc 26.8.1.1 (attempt 3's probe): Calc reads the operand after ':' on.
+        for f, want in [("=A1:(2,", E("Err:511")), ("=A1:(", E("Err:511")), ("=A1:(1+", E("Err:511")),
+                        ("=A1:-A2", E("Err:520")), ("=A1:-", E("Err:520")), ("=A1:+", E("Err:520")),
+                        ("=A1:(2)+", E("Err:520")), ("=A1:*2", E("Err:510")), ("=A1:2", E("Err:502")),
+                        ("=A1:(2)", E("Err:502")), ("=A1:\"x\"", E("Err:502")), ("=A1:SUM(1", E("Err:502")),
+                        ("=A1:(2,3)", E("Err:502")), ("=A1:B", E("#NAME?"))]:
+            self.assertEqual(ev(f), want, f)
+
+    def test_ranges_after_colon_compute(self):
+        book = {"sheets": {"Sheet1": {"A1": 1, "A2": 2}}}
+        for f in ["=SUM(A1:(A2", "=SUM(A1:(A2))", "=SUM(A1:+A2)"]:
+            self.assertEqual(to_json(evaluate(f, book, "Sheet1")), 3, f)
+
+    def test_empty_stdev_is_div0_as_in_calc(self):
+        # LibreOffice Calc 26.8.1.1: =STDEV() and =STDEV( are #DIV/0!, not Err:511.
+        for f in ["=STDEV()", "=STDEV("]:
+            self.assertEqual(ev(f), E("#DIV/0!"), f)
+
     def test_missing_final_parenthesis_is_closed_as_in_calc(self):
         self.assertEqual(ev("=SUM(1"), 1)
         self.assertEqual(ev("=(1+2"), 3)
