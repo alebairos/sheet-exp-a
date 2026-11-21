@@ -55,10 +55,21 @@ class ToNumberTest(unittest.TestCase):
 class ToTextTest(unittest.TestCase):
     def test_general_format(self):
         for x, s in [(1, "1"), (2.5, "2.5"), (-3, "-3"), (0.1 + 0.2, "0.3"), (0, "0"),
-                     (1e20, "1E+20"), (1e-7, "1E-07"), (123456789012, "123456789012"),
+                     (1e20, "1E+020"), (1e-7, "0.0000001"), (123456789012, "123456789012"),
                      (1 / 3, "0.333333333333333")]:
             self.assertEqual(format_number(x), s)
             self.assertEqual(to_text(Number(x)), Text(s))
+
+    def test_rounding_carry_keeps_the_form(self):
+        # Calc picks decimal or E from the number's exponent before rounding to 15 digits.
+        # Expected values from LibreOffice Calc 26.8 (rev-a's probe on wi-a-v1-number-text-1 attempt 1).
+        for x, s in [(999999999999999.5, "1000000000000000"), (9.999999999999995e14, "1000000000000000"),
+                     (1e15 - 0.5, "1000000000000000"), (1e15 - 0.25, "1000000000000000"),
+                     (-999999999999999.5, "-1000000000000000"), (9.999999999999995e-15, "1E-014"),
+                     (9.9999999999999951e-15, "1E-014"), (-9.999999999999995e-15, "-1E-014"),
+                     (1e15 + 0.5, "1E+015"), (9.999999999999995e20, "1E+021"),
+                     (99999999999999.995, "100000000000000")]:
+            self.assertEqual(format_number(x), s, repr(x))
 
     def test_other_kinds(self):
         self.assertEqual(to_text(Bool(True)), Text("TRUE"))
