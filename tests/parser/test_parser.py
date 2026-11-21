@@ -66,10 +66,35 @@ class Precedence(unittest.TestCase):
 
 class Malformed(unittest.TestCase):
     def test_parse_errors(self):
-        for src in ["", "1+1", "=", "=1+", "=(1", "=1)", "=A1:", "=Sheet2!", "=1,2",
+        for src in ["", "1+1", "=", "=1+", "=1)", "=A1:", "=Sheet2!", "=1,2",
                     "=SUM(1,", "=\"x", "=#BAD!", "=Sheet2!XFE1", "=A1:XFE1",
                     "=A1:Sheet2!B2", "=1E999", None, 5]:
             with self.assertRaises(ParseError, msg=repr(src)):
+                parse(src)
+
+    def test_spaces_around_a_range_colon(self):
+        want = parse("=SUM(A1:A2)")
+        for src in ["= SUM( A1 : A2 )", "=SUM(A1 :A2)", "=SUM(A1: A2)"]:
+            self.assertEqual(parse(src), want, src)
+        self.assertEqual(parse("=SUM( 'My Sheet'!A1 : A2 )"), parse("=SUM('My Sheet'!A1:A2)"))
+
+    def test_range_names_its_sheet_on_both_ends(self):
+        self.assertEqual(parse("=S2!A1:S2!A2"), parse("=S2!A1:A2"))
+        self.assertEqual(parse("='My Sheet'!A1:'My Sheet'!B2"), parse("='My Sheet'!A1:B2"))
+        self.assertEqual(parse("=s2!A1:S2!A2"), parse("=s2!A1:A2"))
+        for src in ["=S2!A1:S3!A2", "=A1:S2!A2", "=A1:1", "=1:2", "=A1:B2:C3", "=A1 :"]:
+            with self.assertRaises(ParseError, msg=src):
+                parse(src)
+
+    def test_missing_closing_parentheses_close_at_the_end(self):
+        # Calc computes these: =(1 is 1, =((1+2) is 3, =SUM(1,2 is 3.
+        self.assertEqual(parse("=(1"), parse("=1"))
+        self.assertEqual(parse("=((1+2)"), parse("=1+2"))
+        self.assertEqual(parse("=SUM(1,2"), parse("=SUM(1,2)"))
+        self.assertEqual(parse('=IF(A1=1,"one","other"'), parse('=IF(A1=1,"one","other")'))
+        # Only at the end: a missing ')' before more of the formula, or a dangling argument, is malformed.
+        for src in ["=(1+", "=SUM(1,", "=(1 2", "=SUM(1 2"]:
+            with self.assertRaises(ParseError, msg=src):
                 parse(src)
 
     def test_deep_nesting_is_a_parse_error(self):

@@ -115,8 +115,12 @@ class CallTest(unittest.TestCase):
 
 class MalformedTest(unittest.TestCase):
     def test_unparseable_formula_is_an_error_value(self):
-        for f in ["=1+", "=(", "=SUM(1"]:
+        for f in ["=1+", "=(", "=SUM(1,"]:
             self.assertEqual(ev(f), E("#VALUE!"), f)
+
+    def test_missing_final_parenthesis_is_closed_as_in_calc(self):
+        self.assertEqual(ev("=SUM(1"), 1)
+        self.assertEqual(ev("=(1+2"), 3)
 
 
 if __name__ == "__main__":
