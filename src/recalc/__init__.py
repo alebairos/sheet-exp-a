@@ -153,8 +153,8 @@ class Workbook:
         key = (sheet, addr)
         try:
             tree = p.parse(raw)
-        except p.ParseError:
-            tree = None
+        except p.ParseError as e:
+            tree = p.Error(e.code)  # the cell shows Calc's code for the malformed formula
         self._trees[key] = tree
         points, rects = set(), []
         for node in _refs(tree) if tree is not None else ():
