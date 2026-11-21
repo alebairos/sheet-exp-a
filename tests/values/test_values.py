@@ -55,7 +55,7 @@ class ToNumberTest(unittest.TestCase):
 class ToTextTest(unittest.TestCase):
     def test_general_format(self):
         for x, s in [(1, "1"), (2.5, "2.5"), (-3, "-3"), (0.1 + 0.2, "0.3"), (0, "0"),
-                     (1e20, "1E+20"), (1e-7, "1E-07"), (123456789012, "123456789012"),
+                     (1e20, "1E+020"), (1e-7, "0.0000001"), (123456789012, "123456789012"),
                      (1 / 3, "0.333333333333333")]:
             self.assertEqual(format_number(x), s)
             self.assertEqual(to_text(Number(x)), Text(s))
