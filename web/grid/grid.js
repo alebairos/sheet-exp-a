@@ -85,6 +85,17 @@ export function parseInput(text) {
   return text;
 }
 
+/**
+ * Text typed into a cell's editor as a cell value: parseInput, except that a leading apostrophe makes
+ * the rest text as typed (Calc's rule, and the formula bar's: '007 is the text "007", ' alone is a
+ * blank). The editor can open with that apostrophe (the page's textOf), so a commit reads it back.
+ */
+export function typedInput(text) {
+  const s = String(text ?? "");
+  if (s.startsWith("'")) return s.length > 1 ? s.slice(1) : undefined;
+  return parseInput(s);
+}
+
 /** The text an editor starts with for a cell: its value as typed back. */
 export function inputText(v) {
   if (v === null || v === undefined || typeof v === "object") return "";
@@ -95,7 +106,7 @@ export function inputText(v) {
 export function edit(state, ref, text) {
   const key = String(ref).toUpperCase();
   const cells = { ...cellsOf(state) };
-  const v = parseInput(text);
+  const v = typedInput(text);
   if (v === undefined) delete cells[key];
   else cells[key] = v;
   return { ...state, book: { ...state.book, sheets: { ...state.book.sheets, [state.sheet]: cells } } };
@@ -155,7 +166,7 @@ const STEP_Y = 22, STEP_X = 88;
  * {state, setState(state, {reveal}), destroy()}; setState scrolls to the selection when it moved
  * or when `reveal` is set.
  */
-export function mount(container, state, { rows = 20, cols = 8, onChange = () => {} } = {}) {
+export function mount(container, state, { rows = 20, cols = 8, onChange = () => {}, textOf = null, onEdit = null } = {}) {
   let s = state;
   let editing = null;
   let top = 1, left = 0; // the first row and column index drawn
@@ -239,7 +250,17 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
     const td = tdOf(ref);
     if (!td) return;
     const input = doc.createElement("input");
-    input.value = initial ?? inputText(cellsOf(s)[ref]);
+    // The editor starts from the cell as typed when the page knows it (textOf: formulas, '007), else
+    // from the grid's own text of the value.
+    const before = textOf ? textOf(ref) : inputText(cellsOf(s)[ref]);
+    input.value = initial ?? before;
+    // Closing the editor: text left as it was changes nothing; changed text goes to the page (onEdit)
+    // and into the grid's copy.
+    const finish = (after) => {
+      if (initial === undefined && input.value === before) return update(after(s));
+      if (onEdit) onEdit(ref, input.value);
+      update(after(edit(s, ref, input.value)));
+    };
     td.textContent = "";
     td.appendChild(input);
     editing = input;
@@ -249,7 +270,7 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
       e.stopPropagation();
       if (e.key === "Enter") {
         e.preventDefault();
-        update(move(edit(s, ref, input.value), 0, 1));
+        finish((x) => move(x, 0, 1));
         container.focus();
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -258,13 +279,15 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
       }
     });
     input.addEventListener("blur", () => {
-      if (editing === input) update(edit(s, ref, input.value));
+      if (editing === input) finish((x) => x);
     });
   };
 
   const onClick = (e) => {
     const td = e.target.closest("td[data-ref]");
-    if (td && !td.contains(editing)) update(select(s, td.dataset.ref));
+    // A click on the selected cell redraws nothing, so a double-click's second click lands on the
+    // same cell and the browser sends dblclick.
+    if (td && !td.contains(editing) && td.dataset.ref !== s.selected) update(select(s, td.dataset.ref));
   };
   const onDblClick = (e) => {
     const td = e.target.closest("td[data-ref]");
@@ -289,6 +312,7 @@ export function mount(container, state, { rows = 20, cols = 8, onChange = () => 
       startEdit(s.selected);
       e.preventDefault();
     } else if (e.key === "Delete" || e.key === "Backspace") {
+      if (onEdit) onEdit(s.selected, "");
       update(edit(s, s.selected, ""));
       e.preventDefault();
     } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
