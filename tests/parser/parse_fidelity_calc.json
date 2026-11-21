@@ -1,0 +1,1055 @@
+{
+ "source": "LibreOffice Calc 26.8.1.1, headless over UNO: tests/parser/checks/a_v1_pf_probe.py (the plan's 85 cases) and the same probe on the held-out formulas of wi-a-v1-parse-fidelity-2's reviews and attempt 3. Each formula alone in Sheet1, next to this data. =IF((1 is left out: Calc's TRUE reads back over UNO as the number 1.",
+ "data": {
+  "Sheet1": {
+   "A1": 1,
+   "A2": 2
+  },
+  "My Sheet": {
+   "A1": 5,
+   "A2": 6
+  },
+  "S2": {
+   "A1": 3,
+   "A2": 4
+  }
+ },
+ "cases": [
+  {
+   "formula": "= SUM( A1 : A2 )",
+   "number": 3.0
+  },
+  {
+   "formula": "=SUM( 'My Sheet'!A1 : A2 )",
+   "number": 11.0
+  },
+  {
+   "formula": "=SUM(S2!A1:S2!A2)",
+   "number": 7.0
+  },
+  {
+   "formula": "=SUM(1,2",
+   "number": 3.0
+  },
+  {
+   "formula": "=(1+2",
+   "number": 3.0
+  },
+  {
+   "formula": "=SUM(A1:A2",
+   "number": 3.0
+  },
+  {
+   "formula": "=1 + 2",
+   "number": 3.0
+  },
+  {
+   "formula": "= A1 * A2",
+   "number": 2.0
+  },
+  {
+   "formula": "=SUM(A1 :A2)",
+   "number": 3.0
+  },
+  {
+   "formula": "=( 1 + 2 ) * 3",
+   "number": 9.0
+  },
+  {
+   "formula": "=SUM('My Sheet'!A1:'My Sheet'!A2)",
+   "number": 11.0
+  },
+  {
+   "formula": "=S2!A1 + S2!A2",
+   "number": 7.0
+  },
+  {
+   "formula": "=SUM(1,,2)",
+   "number": 3.0
+  },
+  {
+   "formula": "=IF(A1=1,\"one\",\"other\"",
+   "text": "one"
+  },
+  {
+   "formula": "=(1+",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1+*2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=1E400",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=1+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=*2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=1 2",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(",
+   "number": 0.0
+  },
+  {
+   "formula": "=)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=(1+2))",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=SUM(1,2))",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=A1 A2",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=1++2",
+   "number": 3.0
+  },
+  {
+   "formula": "=1E-400",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=MAX()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=MEDIAN()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM()",
+   "number": 0.0
+  },
+  {
+   "formula": "=MIN()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=AVERAGE()",
+   "error": "#DIV/0!"
+  },
+  {
+   "formula": "=COUNT()",
+   "number": 0.0
+  },
+  {
+   "formula": "=CONCATENATE()",
+   "text": ""
+  },
+  {
+   "formula": "=AND()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IF()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=LEN()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ROUND()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ABS()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=VLOOKUP()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=COUNTA()",
+   "number": 0.0
+  },
+  {
+   "formula": "=OR()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=NOT()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=PRODUCT()",
+   "number": 0.0
+  },
+  {
+   "formula": "=UPPER()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=MAX(1,)",
+   "number": 1.0
+  },
+  {
+   "formula": "=((1",
+   "number": 1.0
+  },
+  {
+   "formula": "=(1*",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=2*(3+",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1+(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1+",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(A1:",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IF(1,2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ABS(-",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1-",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=-",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=1^",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1:",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=1&",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=(1+2)+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=1*/2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=/2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=1 (2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=2 3+4",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(1 2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=1)(2",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=1+2)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=(1",
+   "number": 1.0
+  },
+  {
+   "formula": "=SUM(1,2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=((1+2)",
+   "number": 3.0
+  },
+  {
+   "formula": "=1+2*",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=(2)3",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=1<>",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1 1",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM())",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=1+-",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=MIN(1,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(((",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1/(2-",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=&1",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=(2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2;",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=((2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM((2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1,(2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1+(2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IF((1,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2",
+   "number": 2.0
+  },
+  {
+   "formula": "=((2",
+   "number": 2.0
+  },
+  {
+   "formula": "=SUM((2",
+   "number": 2.0
+  },
+  {
+   "formula": "=SUM(1,(2",
+   "number": 3.0
+  },
+  {
+   "formula": "=1+(2",
+   "number": 3.0
+  },
+  {
+   "formula": "=(2,3)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2,)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(1,2",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2,3",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM((2,3))",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(1,(2,3)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM((1,2),3)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(1,(2 3",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=STDEV()",
+   "error": "#DIV/0!"
+  },
+  {
+   "formula": "=STDEV(",
+   "error": "#DIV/0!"
+  },
+  {
+   "formula": "=1,2",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=1;2",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=,1",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(,1)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,,3",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(1,,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM((2,,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(1+2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(A1,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=2,",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(1),",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2),",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=((2),",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM((2),",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,-",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,+",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,3)+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=(2,3)*/2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=(1,2))",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=(2,3)+(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(2,3)4",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2,3)+1",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=1+(2,3)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2,*3)",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=(2,3 4",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2,3)%",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(,)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(;)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(2,)+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=(2,)*/2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=(2,3)&",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=-(2,3)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM((2,3)+",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM((2,3),",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=A1:(2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(A1:A2,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=((1,2),",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=((1,2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=A1:(2",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=A1:(2)",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=A1:-A2",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1:2",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=1:2",
+   "error": "#VALUE!"
+  },
+  {
+   "formula": "=A1:\"x\"",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=A1:(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=A1:(1+",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=A1:(2,3)",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=A1:-",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1:+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1:*2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=SUM(A1:(A2",
+   "number": 3.0
+  },
+  {
+   "formula": "=A1:(2)+",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1:SUM(1",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=1+)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=(1+)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1+)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1+,2",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(-,1)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1,-)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(1+%)",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=SUM(%)",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=-%",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=SUM(A1:)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(A1:,1)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=A1:)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=1)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=SUM(1))",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=SUM(1)2",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=1\"a\"",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=(1)(2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=a1(2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(A1(2))",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=ZZZ1(2)",
+   "error": "#NAME?"
+  },
+  {
+   "formula": "=1e-320",
+   "number": 1e-320
+  },
+  {
+   "formula": "=0.0E-400",
+   "number": 0.0
+  },
+  {
+   "formula": "=-1E400",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=1E-400+1",
+   "error": "Err:502"
+  },
+  {
+   "formula": "=SUM(1,2,)",
+   "number": 3.0
+  },
+  {
+   "formula": "=SUM(,)",
+   "number": 0.0
+  },
+  {
+   "formula": "=IF(1,,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=FOO()",
+   "error": "#NAME?"
+  },
+  {
+   "formula": "=1+,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1*,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1&,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=-,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=(1+,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1+,2)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(1,2+,3)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IF(1>,2,3)",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=-*2",
+   "error": "Err:510"
+  },
+  {
+   "formula": "=1 +",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=(1))",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=2^",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=\"a\" \"b\"",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=A1 (A2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=MAX(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=LEN(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ROUND(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IF(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=NOT(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IFERROR(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=MIN(",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUM(A1,",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=COUNTA(",
+   "number": 0.0
+  },
+  {
+   "formula": "=CONCATENATE(",
+   "text": ""
+  },
+  {
+   "formula": "=SUM(1)(",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=A1:A2)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=1-(-",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=1E-320",
+   "number": 1e-320
+  },
+  {
+   "formula": "=0E5",
+   "number": 0.0
+  },
+  {
+   "formula": "=ROUND(1,)",
+   "number": 1.0
+  },
+  {
+   "formula": "=IF(1,)",
+   "number": 0.0
+  },
+  {
+   "formula": "=-)",
+   "error": "Err:508"
+  },
+  {
+   "formula": "=%",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=1+%",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=A1(2)",
+   "error": "Err:509"
+  },
+  {
+   "formula": "=SUM(,1)",
+   "number": 1.0
+  },
+  {
+   "formula": "=MAX(,)",
+   "number": 0.0
+  },
+  {
+   "formula": "=SUM(A1:-",
+   "error": "Err:520"
+  },
+  {
+   "formula": "=SUM(A1:+A2)",
+   "number": 3.0
+  },
+  {
+   "formula": "=A1:B",
+   "error": "#NAME?"
+  },
+  {
+   "formula": "=SUM(A1:(A2))",
+   "number": 3.0
+  },
+  {
+   "formula": "=SUM(A1 : A2)",
+   "number": 3.0
+  },
+  {
+   "formula": "=SUM(A1:A2 , 1)",
+   "number": 4.0
+  },
+  {
+   "formula": "=IF(A1=1,(2),3)",
+   "number": 2.0
+  },
+  {
+   "formula": "=SUM((1),(2))",
+   "number": 3.0
+  },
+  {
+   "formula": "=((1))",
+   "number": 1.0
+  },
+  {
+   "formula": "=(1)+(2)",
+   "number": 3.0
+  },
+  {
+   "formula": "=SUM(1,(2))",
+   "number": 3.0
+  },
+  {
+   "formula": "=ROUNDUP()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ROUNDDOWN()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=INT()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=MOD()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=POWER()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SQRT()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=SUMIF()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=COUNTIF()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=AVERAGEIF()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=IFERROR()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ISBLANK()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ISNUMBER()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ISTEXT()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=ISERROR()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=LEFT()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=RIGHT()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=MID()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=LOWER()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=TRIM()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=INDEX()",
+   "error": "Err:511"
+  },
+  {
+   "formula": "=MATCH()",
+   "error": "Err:511"
+  }
+ ]
+}
