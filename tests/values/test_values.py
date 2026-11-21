@@ -45,7 +45,9 @@ class ToNumberTest(unittest.TestCase):
         for s, x in [("12", 12), ("-2.5", -2.5), ("+4", 4), ("1E3", 1000), (".5", 0.5),
                      ("5.", 5), ("1e-2", 0.01)]:
             self.assertEqual(to_number(Text(s)), Number(x), s)
-        for s in ["abc", "", " 12", "12 ", "TRUE", "inf", "nan", "1_000", "1,5", "0x10"]:
+        for s, x in [(" 12", 12), ("12 ", 12), ("TRUE", 1), ("$5", 5), ("1,000", 1000), ("50%", 0.5)]:
+            self.assertEqual(to_number(Text(s)), Number(x), s)  # as Calc reads them
+        for s in ["abc", "", "inf", "nan", "1_000", "1,5", "0x10"]:
             self.assertEqual(to_number(Text(s)), VALUE, s)
 
     def test_error_passes(self):
