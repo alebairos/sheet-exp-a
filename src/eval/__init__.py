@@ -23,6 +23,10 @@ Implicit intersection (a-v1-eval-edges): given the formula's own cell
 operand, unary minus, %, the cell's final value) takes the cell in the
 formula's row (a one-column range) or column (a one-row range), as Calc does;
 outside the range, or without the position, it is ``#VALUE!``.
+
+IF evaluates its condition and then only the branch it takes; IFERROR evaluates its
+fallback only when the value is an error (a-v1-eval-edges). As in Calc, a branch
+that is not taken is never read.
 """
 
 import math
@@ -213,17 +217,37 @@ def _binary(op, left, right):
     return VALUE
 
 
+class _Unevaluated(Value):
+    """Stands for an argument not evaluated yet; the registered IF/IFERROR return the argument they
+    choose as it is, so getting one back names the one branch to evaluate."""
+
+    __slots__ = ("node",)
+
+    def __init__(self, node):
+        object.__setattr__(self, "node", node)
+
+
+# Functions that evaluate only what they use, as Calc does: (name, how many leading arguments are
+# evaluated before the choice). IF's branch not taken and IFERROR's unused fallback are never read,
+# so a cell may refer to itself through them without a circular reference.
+_LAZY = {"IF": 1, "IFERROR": 1}
+
+
+def _arg(a, book, sheet, pos):
+    return BLANK if isinstance(a, p.Missing) else _eval(a, book, sheet, pos)
+
+
 def _call(node, book, sheet, pos=None):
-    fn = registry().get(node.name.upper())
+    name = node.name.upper()
+    fn = registry().get(name)
     if fn is None:
         return NAME
-    args = []
-    for a in node.args:
-        if isinstance(a, p.Missing):
-            args.append(BLANK)
-        else:
-            args.append(_eval(a, book, sheet, pos))
+    eager = _LAZY.get(name, len(node.args))
+    args = [_arg(a, book, sheet, pos) for a in node.args[:eager]]
+    args += [_Unevaluated(a) for a in node.args[eager:]]
     result = fn(*args)
+    if isinstance(result, _Unevaluated):
+        result = _arg(result.node, book, sheet, pos)
     if isinstance(result, (Value, Range)):
         return result
     return from_json(result)

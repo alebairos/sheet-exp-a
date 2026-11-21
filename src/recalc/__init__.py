@@ -10,9 +10,12 @@ the evaluator reads live in ``self._values`` (SPEC.md's shape holding
 :mod:`src.values` Values; ``from_json`` passes them through), and a formula is always
 evaluated after every formula it reads.  Order comes from an iterative Tarjan pass
 (no Python recursion, so long chains and long cycles are safe): its strongly connected
-components arrive precedents first, and a component that is a cycle (more than one
-cell, or a cell reading itself) is Calc's circular-reference error ``Err:522`` without
-being evaluated.  Formulas that read a cycle are evaluated as usual, so the error
+components arrive precedents first.  A component that may refer to itself (more than
+one cell, or a cell reading itself) is evaluated as LibreOffice does (a-v1-eval-edges):
+by address, a precedent of the component computed when it is read, and a read of a
+formula still being computed giving the circular-reference error ``Err:522``.  So a
+self-reference through a branch IF or IFERROR does not take computes, and a real
+cycle ends ``Err:522``.  Formulas that read a cycle are evaluated as usual, so the error
 flows through them as any error does (``ISERROR`` of it is TRUE, as in LibreOffice).
 """
 
@@ -67,6 +70,47 @@ def _refs(tree):
 
 def _is_formula(raw):
     return isinstance(raw, str) and raw.startswith("=")
+
+
+_WAITING, _BUSY, _DONE = "waiting", "busy", "done"
+
+
+class _Pending(BaseException):
+    """A formula of the cycle was read before it was computed (BaseException: no function's
+    error handling may swallow it)."""
+
+    def __init__(self, key):
+        super().__init__(key)
+        self.key = key
+
+
+class _CycleCells:
+    """One sheet's values as a formula of a cycle reads them (only ``get``, as Range reads)."""
+
+    __slots__ = ("sheet", "cells", "state")
+
+    def __init__(self, sheet, cells, state):
+        self.sheet, self.cells, self.state = sheet, cells, state
+
+    def get(self, addr, default=None):
+        st = self.state.get((self.sheet, addr))
+        if st is _WAITING:
+            raise _Pending((self.sheet, addr))
+        if st is _BUSY:
+            return CIRCULAR
+        return self.cells.get(addr, default)
+
+    def __getitem__(self, addr):
+        v = self.get(addr, _MISSING)
+        if v is _MISSING:
+            raise KeyError(addr)
+        return v
+
+    def __contains__(self, addr):
+        return self.get(addr, _MISSING) is not _MISSING
+
+
+_MISSING = object()
 
 
 class Workbook:
@@ -229,15 +273,52 @@ class Workbook:
                         if c == node:
                             break
                     if len(component) > 1 or node in self._precedents(node):
-                        for c in component:
-                            self._values["sheets"][c[0]][c[1]] = CIRCULAR
+                        self._evaluate_cycle(component)
                     else:
                         self._evaluate(node)
 
-    def _evaluate(self, key):
+    def _evaluate(self, key, book=None):
         sheet, addr = key
         tree = self._trees[key]
-        self._values["sheets"][sheet][addr] = VALUE if tree is None else evaluate_node(tree, self._values, sheet, addr)
+        value = VALUE if tree is None else evaluate_node(tree, self._values if book is None else book, sheet, addr)
+        self._values["sheets"][sheet][addr] = value
+
+    def _evaluate_cycle(self, component):
+        """Evaluate the formulas of a component that may refer to itself, as Calc does.
+
+        Calc computes them in address order (sheet, then column, then row); a formula of the
+        component read before it is computed is computed then, and a read of one still being
+        computed is Err:522 for that read. Each formula keeps the value it gets, so a self-reference
+        through a branch IF or IFERROR does not take computes, and a real cycle ends Err:522.
+
+        No Python recursion (a cycle can be 10,000 cells long): a read of a formula not yet computed
+        stops the reader (_Pending), that formula is computed first on an explicit stack, and the
+        reader then starts again. Evaluation reads nothing else that changes, so the restart sees
+        exactly what the nested evaluation would have seen.
+        """
+        state = dict.fromkeys(component, _WAITING)
+        sheets = self._values["sheets"]
+        view = {"sheets": {name: _CycleCells(name, cells, state) for name, cells in sheets.items()}}
+        order = {name: i for i, name in enumerate(self._raw)}
+
+        def address_order(key):
+            pos = _split(key[1]) or (0, 0)
+            return order.get(key[0], len(order)), pos[0], pos[1], key[1]
+
+        for root in sorted(component, key=address_order):
+            if state[root] is _DONE:
+                continue
+            stack = [root]
+            while stack:
+                key = stack[-1]
+                state[key] = _BUSY
+                try:
+                    self._evaluate(key, view)
+                except _Pending as wait:
+                    stack.append(wait.key)
+                    continue
+                state[key] = _DONE
+                stack.pop()
 
     # --- the API ----------------------------------------------------------
 
